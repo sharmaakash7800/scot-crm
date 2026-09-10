@@ -55,11 +55,11 @@ function switchTab(tabId) {
   if (tabId === 'enquiries') loadEnquiries();
 }
 
-// Month Selector Rendering (Pills + Dropdown)
+// Month Selector Rendering (Dropdown Only)
 function renderMonthPills(months) {
   currentMonthsList = months;
-  const container = document.getElementById('monthFilterContainer');
   const dropdown = document.getElementById('monthSelectDropdown');
+  const badge = document.getElementById('currentMonthBadge');
 
   if (dropdown) {
     dropdown.innerHTML = months.map(m => `
@@ -71,18 +71,10 @@ function renderMonthPills(months) {
     };
   }
 
-  if (!container) return;
-  container.innerHTML = '';
-
-  months.forEach(m => {
-    const pill = document.createElement('button');
-    pill.className = `month-pill ${m.key === currentMonthKey ? 'active' : ''}`;
-    pill.innerText = m.name;
-    pill.onclick = () => {
-      selectMonth(m.key);
-    };
-    container.appendChild(pill);
-  });
+  if (badge) {
+    const activeMonth = months.find(m => m.key === currentMonthKey);
+    badge.innerText = activeMonth ? activeMonth.name : currentMonthKey;
+  }
 }
 
 function selectMonth(monthKey) {
@@ -92,14 +84,12 @@ function selectMonth(monthKey) {
   const dropdown = document.getElementById('monthSelectDropdown');
   if (dropdown) dropdown.value = monthKey;
 
-  // Sync pills
-  document.querySelectorAll('.month-pill').forEach(p => {
-    if (p.innerText.includes(monthKey) || p.innerText === (currentMonthsList.find(m => m.key === monthKey)?.name)) {
-      p.classList.add('active');
-    } else {
-      p.classList.remove('active');
-    }
-  });
+  // Sync badge
+  const badge = document.getElementById('currentMonthBadge');
+  if (badge && currentMonthsList) {
+    const activeMonth = currentMonthsList.find(m => m.key === monthKey);
+    badge.innerText = activeMonth ? activeMonth.name : monthKey;
+  }
 
   loadDashboard();
   if (document.getElementById('tab-scot-monthly').classList.contains('active')) {
@@ -395,20 +385,31 @@ async function loadClientMaster() {
       return;
     }
 
-    tbody.innerHTML = clients.map(c => `
-      <tr>
-        <td><code>${c.uniqueId || '-'}</code></td>
-        <td><strong>${c.clientName}</strong></td>
-        <td>${c.contactNumber || '-'}</td>
-        <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis;">${c.address || '-'}</td>
-        <td>${c.usualOrderGap || 0} days</td>
-        <td>${formatDate(c.firstOrderDate)}</td>
-        <td>
-          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="editClient('${c._id}')">Edit</button>
-          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem; color: #fb7185;" onclick="deleteClient('${c._id}')">Delete</button>
-        </td>
-      </tr>
-    `).join('');
+    tbody.innerHTML = clients.map(c => {
+      const isTaken = c.followUpStatus === 'Taken / Done';
+      const statusBadge = isTaken
+        ? '<span class="badge badge-active">✅ Done</span>'
+        : (c.nextFollowUpDate ? '<span class="badge badge-slow">⏳ Pending</span>' : '<span class="badge badge-none">Not Set</span>');
+
+      return `
+        <tr>
+          <td><code>${c.uniqueId || '-'}</code></td>
+          <td><strong style="cursor: pointer; color: var(--accent-cyan);" onclick="editClient('${c._id}')" title="Click to Edit">${c.clientName} ✏️</strong></td>
+          <td>${c.contactNumber || '-'}</td>
+          <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis;">${c.address || '-'}</td>
+          <td>${c.usualOrderGap || 0} days</td>
+          <td><strong style="color: var(--accent-cyan);">${formatDate(c.nextFollowUpDate)}</strong></td>
+          <td>${statusBadge}</td>
+          <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; font-size: 0.82rem; color: var(--text-secondary);">${c.lastFeedback || '-'}</td>
+          <td>
+            <div style="display: flex; gap: 6px;">
+              <button class="btn btn-primary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="editClient('${c._id}')">✏️ Edit</button>
+              <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem; color: #fb7185;" onclick="deleteClient('${c._id}')">Delete</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
   } catch (err) {
     console.error('Error loading clients:', err);
   }
@@ -518,15 +519,19 @@ document.getElementById('txForm')?.addEventListener('submit', async (e) => {
 // Client Modal
 function openClientModal(client = null) {
   if (client) {
-    document.getElementById('clientModalTitle').innerText = 'Edit Client';
+    document.getElementById('clientModalTitle').innerText = '✏️ Edit Client Details';
     document.getElementById('clientEditId').value = client._id;
     document.getElementById('clientName').value = client.clientName;
     document.getElementById('clientContact').value = client.contactNumber || '';
     document.getElementById('clientAddress').value = client.address || '';
     document.getElementById('clientUsualGap').value = client.usualOrderGap || '';
     document.getElementById('clientFirstOrderDate').value = client.firstOrderDate ? client.firstOrderDate.split('T')[0] : '';
+    document.getElementById('clientFollowUpStatus').value = client.followUpStatus || 'Pending';
+    document.getElementById('clientNextFollowUpDate').value = client.nextFollowUpDate ? client.nextFollowUpDate.split('T')[0] : '';
+    document.getElementById('clientFollowUpTakenBy').value = client.followUpTakenBy || '';
+    document.getElementById('clientLastFeedback').value = client.lastFeedback || '';
   } else {
-    document.getElementById('clientModalTitle').innerText = 'Add Client';
+    document.getElementById('clientModalTitle').innerText = 'Add New Client';
     document.getElementById('clientEditId').value = '';
     document.getElementById('clientForm').reset();
   }
@@ -548,6 +553,7 @@ async function deleteClient(id) {
   if (!confirm('Are you sure you want to delete this client?')) return;
   await fetch(`/api/clients/${id}`, { method: 'DELETE' });
   loadClientMaster();
+  loadScotMonthly();
 }
 
 async function deleteTransaction(id) {
@@ -565,7 +571,11 @@ document.getElementById('clientForm')?.addEventListener('submit', async (e) => {
     contactNumber: document.getElementById('clientContact').value,
     address: document.getElementById('clientAddress').value,
     usualOrderGap: document.getElementById('clientUsualGap').value,
-    firstOrderDate: document.getElementById('clientFirstOrderDate').value
+    firstOrderDate: document.getElementById('clientFirstOrderDate').value,
+    followUpStatus: document.getElementById('clientFollowUpStatus').value,
+    nextFollowUpDate: document.getElementById('clientNextFollowUpDate').value,
+    followUpTakenBy: document.getElementById('clientFollowUpTakenBy').value,
+    lastFeedback: document.getElementById('clientLastFeedback').value
   };
 
   const url = id ? `/api/clients/${id}` : '/api/clients';
@@ -579,6 +589,9 @@ document.getElementById('clientForm')?.addEventListener('submit', async (e) => {
   if (res.ok) {
     closeClientModal();
     loadClientMaster();
+    loadScotMonthly();
+    loadTodayFollowUpAgenda();
+    alert('✅ Client data saved & updated successfully!');
   } else {
     alert('Failed to save client');
   }

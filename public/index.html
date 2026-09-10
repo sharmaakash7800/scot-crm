@@ -113,22 +113,21 @@
       </div>
     </header>
 
-    <!-- Month Filter Bar (Dropdown & Quick Selectors) -->
-    <div class="month-filter-bar-wrapper" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 24px;">
-      <div style="display: flex; align-items: center; gap: 12px;">
-        <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; gap: 6px;">
-          <span>📅 Financial Month:</span>
+    <!-- Month Filter Bar (Clean Modern Dropdown Only) -->
+    <div class="month-filter-bar-wrapper" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 24px; background: var(--bg-card); padding: 12px 20px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <label for="monthSelectDropdown" style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.2rem;">📅</span> Select Financial Month:
         </label>
-        <div class="custom-select-wrap" style="min-width: 220px;">
-          <select id="monthSelectDropdown" class="form-control" style="font-weight: 600; cursor: pointer; border-color: var(--accent-primary); box-shadow: 0 0 12px rgba(99,102,241,0.2);">
+        <div class="custom-select-wrap" style="min-width: 260px;">
+          <select id="monthSelectDropdown" class="form-control" style="font-weight: 600; cursor: pointer; border-color: var(--accent-primary); box-shadow: 0 0 12px rgba(99,102,241,0.25); font-size: 0.92rem;">
             <!-- Options populated dynamically -->
           </select>
         </div>
       </div>
-
-      <!-- Quick Scrollable Month Pills -->
-      <div class="month-filter-bar" id="monthFilterContainer" style="margin-bottom: 0; padding: 0;">
-        <!-- Generated dynamically -->
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span class="badge badge-active" id="currentMonthBadge">April 2026</span>
+        <span style="font-size: 0.8rem; color: var(--text-secondary);">FY 2026-27</span>
       </div>
     </div>
 
@@ -425,7 +424,9 @@
                 <th>Contact</th>
                 <th>Address</th>
                 <th>Usual Order Gap</th>
-                <th>First Order Date</th>
+                <th>Next Follow-up</th>
+                <th>Follow-up Status</th>
+                <th>Feedback / Notes</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -631,17 +632,45 @@ git push -u origin main</pre>
           <label class="form-label">Address / Details</label>
           <textarea class="form-control" id="clientAddress" rows="2" placeholder="Full address"></textarea>
         </div>
-        <div class="form-group">
-          <label class="form-label">Usual Order Gap (Days)</label>
-          <input type="number" class="form-control" id="clientUsualGap" placeholder="e.g. 30">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Usual Order Gap (Days)</label>
+            <input type="number" class="form-control" id="clientUsualGap" placeholder="e.g. 30">
+          </div>
+          <div class="form-group">
+            <label class="form-label">First Order Date</label>
+            <input type="date" class="form-control" id="clientFirstOrderDate">
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">First Order Date</label>
-          <input type="date" class="form-control" id="clientFirstOrderDate">
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 8px;">
+          <div class="form-group">
+            <label class="form-label">Follow-up Status (लिया या Pending)</label>
+            <select class="form-control" id="clientFollowUpStatus">
+              <option value="Pending">⏳ Pending</option>
+              <option value="Taken / Done">✅ Taken / Done</option>
+              <option value="Not Required">⚪ Not Required</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Next Follow-up Date</label>
+            <input type="date" class="form-control" id="clientNextFollowUpDate">
+          </div>
         </div>
+
+        <div class="form-group">
+          <label class="form-label">Kon Follow-up ley rha h (Executive Name)</label>
+          <input type="text" class="form-control" id="clientFollowUpTakenBy" placeholder="e.g. Priya Sharma">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Customer Feedback / Note</label>
+          <textarea class="form-control" id="clientLastFeedback" rows="2" placeholder="Latest customer feedback..."></textarea>
+        </div>
+
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
           <button type="button" class="btn btn-secondary" onclick="closeClientModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save Client</button>
+          <button type="submit" class="btn btn-primary">Save Client Details</button>
         </div>
       </form>
     </div>

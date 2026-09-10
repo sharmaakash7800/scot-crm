@@ -213,16 +213,32 @@ app.post('/api/clients', async (req, res) => {
 
 app.put('/api/clients/:id', async (req, res) => {
   try {
-    const { clientName, contactNumber, address, usualOrderGap, firstOrderDate } = req.body;
+    const {
+      clientName,
+      contactNumber,
+      address,
+      usualOrderGap,
+      firstOrderDate,
+      nextFollowUpDate,
+      followUpTakenBy,
+      followUpStatus,
+      lastFeedback
+    } = req.body;
+
+    const updateData = {};
+    if (clientName !== undefined) updateData.clientName = clientName.trim();
+    if (contactNumber !== undefined) updateData.contactNumber = contactNumber.trim();
+    if (address !== undefined) updateData.address = address.trim();
+    if (usualOrderGap !== undefined) updateData.usualOrderGap = Number(usualOrderGap) || 0;
+    if (firstOrderDate !== undefined) updateData.firstOrderDate = firstOrderDate ? new Date(firstOrderDate) : null;
+    if (nextFollowUpDate !== undefined) updateData.nextFollowUpDate = nextFollowUpDate ? new Date(nextFollowUpDate) : null;
+    if (followUpTakenBy !== undefined) updateData.followUpTakenBy = followUpTakenBy.trim();
+    if (followUpStatus !== undefined) updateData.followUpStatus = followUpStatus;
+    if (lastFeedback !== undefined) updateData.lastFeedback = lastFeedback.trim();
+
     const client = await Client.findByIdAndUpdate(
       req.params.id,
-      {
-        clientName: clientName.trim(),
-        contactNumber,
-        address,
-        usualOrderGap: Number(usualOrderGap) || 0,
-        firstOrderDate: firstOrderDate ? new Date(firstOrderDate) : null
-      },
+      updateData,
       { new: true }
     );
     res.json({ success: true, client });
