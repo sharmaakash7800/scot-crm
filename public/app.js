@@ -287,15 +287,30 @@ async function loadScotMonthly() {
 function renderScotTable(records) {
   const tbody = document.querySelector('#scotSheetTable tbody');
   if (records.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; color: var(--text-muted);">No records found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align: center; color: var(--text-muted);">No records found.</td></tr>';
     return;
   }
 
   tbody.innerHTML = records.map(r => {
-    const isTaken = r.followUpStatus === 'Taken / Done';
-    const statusBadge = isTaken
-      ? '<span class="badge badge-active">✅ Taken / Done</span>'
-      : (r.nextFollowUpDate ? '<span class="badge badge-slow">⏳ Pending</span>' : '<span class="badge badge-none">Not Set</span>');
+    // Month-specific status badge
+    let statusBadge = '<span class="badge badge-none">Not Planned</span>';
+    if (r.followUpStatus === 'Taken / Done') {
+      statusBadge = '<span class="badge badge-active">✅ Done</span>';
+    } else if (r.followUpStatus === 'Pending') {
+      statusBadge = '<span class="badge badge-slow">⏳ Pending</span>';
+    }
+
+    const plannedDisplay = r.plannedDate 
+      ? `<strong style="color: var(--accent-cyan);">${formatDate(r.plannedDate)}</strong>` 
+      : '<span style="color: var(--text-muted);">-</span>';
+
+    const actualDisplay = r.actualDate 
+      ? `<strong style="color: #10b981;">${formatDate(r.actualDate)}</strong>` 
+      : '<span style="color: var(--text-muted);">-</span>';
+
+    const remarkDisplay = r.remark 
+      ? `<span style="display: block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem;" title="${r.remark.replace(/"/g, '&quot;')}">${r.remark}</span>` 
+      : '<span style="color: var(--text-muted);">-</span>';
 
     return `
       <tr>
@@ -306,13 +321,20 @@ function renderScotTable(records) {
         <td>${r.totalInvoices}</td>
         <td><strong>${formatCurrency(r.totalSales)}</strong></td>
         <td>${getStatusBadge(r.status)}</td>
-        <td><strong style="color: var(--accent-cyan);">${formatDate(r.nextFollowUpDate)}</strong></td>
+        <td>${plannedDisplay}</td>
+        <td>${actualDisplay}</td>
         <td>${r.followUpTakenBy || '<span style="color: var(--text-muted);">-</span>'}</td>
         <td>${statusBadge}</td>
+        <td>${remarkDisplay}</td>
         <td>
-          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.74rem;" onclick="openQuickFollowUpModal('${r._id}', '${r.clientName.replace(/'/g, "\\'")}', '${r.nextFollowUpDate ? r.nextFollowUpDate.split('T')[0] : ''}', '${(r.followUpTakenBy || '').replace(/'/g, "\\'")}', '${r.followUpStatus || 'Pending'}', '${(r.lastFeedback || '').replace(/'/g, "\\'")}')">
-            ⚡ Set Follow-up
-          </button>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.74rem;" title="Update follow-up for this month" onclick="openQuickFollowUpModal('${r._id}', '${r.clientName.replace(/'/g, "\\'")}', '${r.plannedDate ? r.plannedDate.split('T')[0] : ''}', '${(r.followUpTakenBy || '').replace(/'/g, "\\'")}', '${r.followUpStatus || 'Pending'}', '${(r.remark || '').replace(/'/g, "\\'")}')">
+              ⚡ Set
+            </button>
+            <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.74rem; color: var(--accent-cyan);" title="View complete follow-up audit trail" onclick="viewClientHistory('${r._id}')">
+              📜 History
+            </button>
+          </div>
         </td>
       </tr>
     `;
@@ -408,8 +430,9 @@ async function loadClientMaster() {
           <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; font-size: 0.82rem; color: var(--text-secondary);">${c.lastFeedback || '-'}</td>
           <td>
             <div style="display: flex; gap: 6px;">
-              <button class="btn btn-primary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="editClient('${c._id}')">✏️ Edit</button>
-              <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem; color: #fb7185;" onclick="deleteClient('${c._id}')">Delete</button>
+              <button class="btn btn-primary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="editClient('${c._id}')">✏️ Edit</button>
+              <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; color: var(--accent-cyan);" onclick="viewClientHistory('${c._id}')">📜 History</button>
+              <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; color: #fb7185;" onclick="deleteClient('${c._id}')">Delete</button>
             </div>
           </td>
         </tr>
@@ -596,6 +619,7 @@ document.getElementById('clientForm')?.addEventListener('submit', async (e) => {
     loadClientMaster();
     loadScotMonthly();
     loadTodayFollowUpAgenda();
+    loadFollowUpCalendar();
     alert('✅ Client data saved & updated successfully!');
   } else {
     alert('Failed to save client');
@@ -966,56 +990,184 @@ function renderCalendarGrid() {
 }
 
 function selectCalendarDate(dateStr, followups, calls) {
-  const panel = document.getElementById('calendarSelectedDatePanel');
-  const heading = document.getElementById('calendarSelectedDateHeading');
-  const sub = document.getElementById('calendarSelectedDateSub');
-  const list = document.getElementById('calendarSelectedEventsList');
+  openCalendarDateModal(dateStr, followups, calls);
+}
 
-  panel.style.display = 'block';
-  heading.innerText = `Activities on: ${dateStr}`;
-  sub.innerText = `${followups.length} Follow-ups scheduled, ${calls.length} Calls logged`;
+function openCalendarDateModal(dateStr, followups = [], calls = []) {
+  const modal = document.getElementById('calendarDateModal');
+  const title = document.getElementById('calModalDateTitle');
+  const sub = document.getElementById('calModalDateSub');
+  const list = document.getElementById('calModalEventsList');
+  const addBtn = document.getElementById('btnCalModalAddAction');
 
-  document.getElementById('btnScheduleOnSelectedDate').onclick = () => {
-    openCREModal({ nextFollowUpDate: dateStr });
+  title.innerText = `📅 Activities on: ${formatDate(dateStr)}`;
+  sub.innerText = `${followups.length} Follow-ups scheduled • ${calls.length} Calls logged`;
+
+  addBtn.onclick = () => {
+    closeCalendarDateModal();
+    openCREModal({ nextFollowUpDate: dateStr, callDate: dateStr });
   };
 
   if (followups.length === 0 && calls.length === 0) {
-    list.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem; padding: 12px 0;">No activities recorded on this date.</p>`;
+    list.innerHTML = `
+      <div style="text-align: center; padding: 36px 16px; background: rgba(255,255,255,0.02); border-radius: var(--radius-md); border: 1px dashed var(--border-color);">
+        <div style="font-size: 2.2rem; margin-bottom: 8px;">🗓️</div>
+        <h4 style="color: var(--text-primary); margin-bottom: 6px;">No Events on this Date</h4>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 14px;">No customer calls or follow-ups are recorded for ${formatDate(dateStr)}.</p>
+        <button class="btn btn-primary" onclick="closeCalendarDateModal(); openCREModal({ nextFollowUpDate: '${dateStr}', callDate: '${dateStr}' });" style="font-size: 0.82rem;">
+          + Schedule Follow-up Now
+        </button>
+      </div>
+    `;
+  } else {
+    let html = '';
+
+    if (followups.length > 0) {
+      html += `
+        <div style="margin-bottom: 16px;">
+          <h5 style="color: #fbbf24; font-size: 0.88rem; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+            <span>⏰</span> Follow-ups Due (${followups.length})
+          </h5>
+      `;
+      followups.forEach(f => {
+        html += `
+          <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+              <div>
+                <strong style="color: var(--text-primary); font-size: 0.92rem;">${f.clientName}</strong>
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
+                  📞 ${f.contactNumber || 'No contact'} ${f.creName ? '• By: ' + f.creName : ''}
+                </div>
+              </div>
+              <button class="btn btn-primary" style="padding: 4px 10px; font-size: 0.74rem;" onclick="closeCalendarDateModal(); quickFollowUpCall('${f.clientName}', '${f.contactNumber || ''}', '${f.clientId || ''}')">
+                📞 Call
+              </button>
+            </div>
+            ${f.customerFeedback ? `<div style="font-size: 0.82rem; color: var(--text-primary); margin-top: 6px; background: rgba(0,0,0,0.2); padding: 6px 10px; border-radius: 4px;">Feedback: "${f.customerFeedback}"</div>` : ''}
+          </div>
+        `;
+      });
+      html += `</div>`;
+    }
+
+    if (calls.length > 0) {
+      html += `
+        <div>
+          <h5 style="color: #10b981; font-size: 0.88rem; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+            <span>📞</span> Calls Logged (${calls.length})
+          </h5>
+      `;
+      calls.forEach(c => {
+        html += `
+          <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+              <div>
+                <strong style="color: var(--text-primary); font-size: 0.92rem;">${c.clientName}</strong>
+                <span class="badge ${c.callStatus === 'Connected' || c.callStatus === 'Order Promised' ? 'badge-active' : 'badge-slow'}" style="margin-left: 6px; font-size: 0.7rem;">${c.callStatus}</span>
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;">
+                  Executive: <strong>${c.creName || 'CRE'}</strong> ${c.orderExpectedAmount ? '• Expected: ₹' + c.orderExpectedAmount.toLocaleString() : ''}
+                </div>
+              </div>
+              <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.74rem;" onclick="closeCalendarDateModal(); viewClientHistory('${c.clientId || ''}')">
+                📜 History
+              </button>
+            </div>
+            ${c.customerFeedback ? `<div style="font-size: 0.82rem; color: var(--text-primary); margin-top: 6px; background: rgba(0,0,0,0.2); padding: 6px 10px; border-radius: 4px;">Feedback: "${c.customerFeedback}"</div>` : ''}
+          </div>
+        `;
+      });
+      html += `</div>`;
+    }
+
+    list.innerHTML = html;
+  }
+
+  modal.classList.add('active');
+}
+
+function closeCalendarDateModal() {
+  document.getElementById('calendarDateModal').classList.remove('active');
+}
+
+// Client Complete Follow-up History Audit Trail
+async function viewClientHistory(clientId) {
+  if (!clientId) {
+    alert('Client ID not found for history');
     return;
   }
 
-  let html = '';
-  if (followups.length > 0) {
-    html += `<h5 style="color: #fbbf24; margin: 10px 0 6px;">⏰ Follow-ups Due (${followups.length})</h5>`;
-    followups.forEach(f => {
+  const modal = document.getElementById('clientHistoryModal');
+  const title = document.getElementById('historyClientName');
+  const sub = document.getElementById('historyClientDetails');
+  const list = document.getElementById('historyTimelineList');
+
+  list.innerHTML = '<div style="text-align: center; padding: 30px; color: var(--text-muted);">Loading complete client history...</div>';
+  modal.classList.add('active');
+
+  try {
+    const res = await fetch(`/api/clients/${clientId}/followup-history`);
+    const data = await res.json();
+
+    if (!data.success) {
+      list.innerHTML = `<div style="color: #f43f5e; padding: 20px;">Error: ${data.error}</div>`;
+      return;
+    }
+
+    const client = data.client || {};
+    const history = data.history || [];
+
+    title.innerText = `📜 Follow-up History: ${client.clientName}`;
+    sub.innerText = `Contact: ${client.contactNumber || 'N/A'} • Total Interactions Recorded: ${history.length}`;
+
+    if (history.length === 0) {
+      list.innerHTML = `
+        <div style="text-align: center; padding: 40px 16px; background: rgba(255,255,255,0.02); border-radius: var(--radius-md); border: 1px dashed var(--border-color);">
+          <div style="font-size: 2rem; margin-bottom: 8px;">📭</div>
+          <h4 style="color: var(--text-primary); margin-bottom: 4px;">No Past Follow-up History</h4>
+          <p style="color: var(--text-muted); font-size: 0.84rem;">No calls or scheduled follow-ups have been logged yet for ${client.clientName}.</p>
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    history.forEach((h, idx) => {
+      const callDateStr = formatDate(h.callDate);
+      const nextDateStr = h.nextFollowUpDate ? formatDate(h.nextFollowUpDate) : 'Not scheduled';
+      const isCompleted = h.isCompleted || h.callStatus === 'Connected' || h.callStatus === 'Order Promised';
+
       html += `
-        <div class="feedback-history-item">
-          <div style="display: flex; justify-content: space-between;">
-            <strong>${f.clientName}</strong>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">${f.contactNumber || '-'}</span>
+        <div style="position: relative; padding-left: 24px; margin-bottom: 18px; border-left: 2px solid ${isCompleted ? '#10b981' : '#f59e0b'};">
+          <div style="position: absolute; left: -7px; top: 0; width: 12px; height: 12px; border-radius: 50%; background: ${isCompleted ? '#10b981' : '#f59e0b'};"></div>
+          <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-weight: 700; font-size: 0.92rem; color: var(--text-primary);">
+                Interaction #${history.length - idx} • ${callDateStr}
+              </span>
+              <span class="badge ${isCompleted ? 'badge-active' : 'badge-slow'}">${h.callStatus || 'Call Logged'}</span>
+            </div>
+            <div style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 12px;">
+              <span>Executive: <strong>${h.creName || 'CRE'}</strong></span>
+              <span>Next Follow-up: <strong style="color: var(--accent-cyan);">${nextDateStr}</strong></span>
+              ${h.orderExpectedAmount ? `<span>Expected Sale: <strong style="color: #10b981;">₹${h.orderExpectedAmount.toLocaleString()}</strong></span>` : ''}
+              ${h.sentiment ? `<span>Sentiment: <strong>${h.sentiment}</strong></span>` : ''}
+            </div>
+            <div style="background: rgba(0, 0, 0, 0.25); border-radius: 6px; padding: 8px 12px; font-size: 0.84rem; color: var(--text-primary);">
+              <strong>Remark:</strong> "${h.customerFeedback || '-'}"
+            </div>
           </div>
-          <p style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 4px;">Feedback: "${f.customerFeedback}"</p>
         </div>
       `;
     });
-  }
 
-  if (calls.length > 0) {
-    html += `<h5 style="color: #10b981; margin: 14px 0 6px;">📞 Calls Logged (${calls.length})</h5>`;
-    calls.forEach(c => {
-      html += `
-        <div class="feedback-history-item">
-          <div style="display: flex; justify-content: space-between;">
-            <strong>${c.clientName} (${c.callStatus})</strong>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">CRE: ${c.creName || '-'}</span>
-          </div>
-          <p style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 4px;">Feedback: "${c.customerFeedback}"</p>
-        </div>
-      `;
-    });
+    list.innerHTML = html;
+  } catch (err) {
+    list.innerHTML = `<div style="color: #f43f5e; padding: 20px;">Network error: ${err.message}</div>`;
   }
+}
 
-  list.innerHTML = html;
+function closeClientHistoryModal() {
+  document.getElementById('clientHistoryModal').classList.remove('active');
 }
 
 // Calendar Navigation
@@ -1086,9 +1238,8 @@ document.getElementById('creForm')?.addEventListener('submit', async (e) => {
       closeCREModal();
       loadTodayFollowUpAgenda();
       loadAllFollowupsHistory();
-      if (document.getElementById('tab-calendar-view').classList.contains('active')) {
-        loadFollowUpCalendar();
-      }
+      loadScotMonthly();
+      loadFollowUpCalendar();
       alert('✅ CRE Call & Next Follow-up logged and saved to MongoDB & Calendar!');
     } else {
       alert('Error: ' + data.error);
@@ -1138,6 +1289,8 @@ document.getElementById('quickFollowUpForm')?.addEventListener('submit', async (
       closeQuickFollowUpModal();
       loadScotMonthly();
       loadTodayFollowUpAgenda();
+      loadFollowUpCalendar();
+      loadAllFollowupsHistory();
       alert('✅ Follow-up status & Next date updated successfully!');
     } else {
       alert('Error updating follow-up: ' + data.error);

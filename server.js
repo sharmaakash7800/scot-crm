@@ -44,8 +44,8 @@ const FY_MONTHS = [
   { key: "Mar'27", name: 'March 2027', endDate: '2027-03-31', sheetTab: 'Scot_Mar27' }
 ];
 
-// Helper to compute SCOT calculations for a given cutoff date
-async function computeScotForDate(cutoffDate) {
+// Helper to compute SCOT calculations for a given cutoff date and optional monthInfo
+async function computeScotForDate(cutoffDate, monthInfo = null) {
   const clients = await Client.find().lean();
   const transactions = await Transaction.find({ date: { $lte: cutoffDate } })
     .sort({ date: 1 })
@@ -61,8 +61,41 @@ async function computeScotForDate(cutoffDate) {
     txByClient.get(key).push(tx);
   }
 
+  // If monthInfo is provided, calculate the month date range to resolve month-specific follow-ups
+  let monthFollowUpsMap = new Map();
+  if (monthInfo && monthInfo.endDate) {
+    const mEnd = new Date(monthInfo.endDate + 'T23:59:59.999Z');
+    const mStart = new Date(Date.UTC(mEnd.getUTCFullYear(), mEnd.getUTCMonth(), 1, 0, 0, 0));
+
+    // Find all FollowUp records either planned for this month OR calls taken in this month
+    const monthFollowups = await FollowUp.find({
+      $or: [
+        { nextFollowUpDate: { $gte: mStart, $lte: mEnd } },
+        { callDate: { $gte: mStart, $lte: mEnd } }
+      ]
+    }).sort({ callDate: 1, nextFollowUpDate: 1 }).lean();
+
+    // Group by client ID or client Name (lowercase)
+    for (const f of monthFollowups) {
+      const cIdKey = f.clientId ? String(f.clientId) : '';
+      const nameKey = (f.clientName || '').trim().toLowerCase();
+      
+      const targetKeys = [];
+      if (cIdKey) targetKeys.push(cIdKey);
+      if (nameKey) targetKeys.push(nameKey);
+
+      for (const k of targetKeys) {
+        if (!monthFollowUpsMap.has(k)) {
+          monthFollowUpsMap.set(k, []);
+        }
+        monthFollowUpsMap.get(k).push(f);
+      }
+    }
+  }
+
   const results = clients.map(client => {
     const key = (client.clientName || '').trim().toLowerCase();
+    const clientIdStr = String(client._id);
     const clientTxList = txByClient.get(key) || [];
 
     const totalInvoices = clientTxList.length;
@@ -107,6 +140,50 @@ async function computeScotForDate(cutoffDate) {
     const usualOrderGap = Number(client.usualOrderGap) || 0;
     const avgOrderSize = totalInvoices > 0 ? (totalSales / totalInvoices) : 0;
 
+    // Month-scoped follow-up resolution:
+    let monthPlannedDate = null;
+    let monthActualDate = null;
+    let monthFollowUpStatus = 'Not Set';
+    let monthRemark = '';
+    let monthExecutive = '';
+
+    if (monthInfo) {
+      const mEnd = new Date(monthInfo.endDate + 'T23:59:59.999Z');
+      const mStart = new Date(Date.UTC(mEnd.getUTCFullYear(), mEnd.getUTCMonth(), 1, 0, 0, 0));
+
+      const fList = monthFollowUpsMap.get(clientIdStr) || monthFollowUpsMap.get(key) || [];
+      
+      // Look for any call made in this month
+      const callsInMonth = fList.filter(f => f.callDate && new Date(f.callDate) >= mStart && new Date(f.callDate) <= mEnd);
+      // Look for any follow-up planned for this month
+      const plannedInMonth = fList.filter(f => f.nextFollowUpDate && new Date(f.nextFollowUpDate) >= mStart && new Date(f.nextFollowUpDate) <= mEnd);
+
+      if (callsInMonth.length > 0) {
+        const latestCall = callsInMonth[callsInMonth.length - 1];
+        monthActualDate = latestCall.callDate;
+        monthFollowUpStatus = 'Taken / Done';
+        monthRemark = latestCall.customerFeedback || '';
+        monthExecutive = latestCall.creName || '';
+      }
+
+      if (plannedInMonth.length > 0) {
+        const firstPlanned = plannedInMonth[0];
+        monthPlannedDate = firstPlanned.nextFollowUpDate;
+        if (!monthExecutive) monthExecutive = firstPlanned.creName || '';
+        if (monthFollowUpStatus !== 'Taken / Done') {
+          monthFollowUpStatus = 'Pending';
+          if (!monthRemark) monthRemark = firstPlanned.customerFeedback || '';
+        }
+      }
+    } else {
+      // Fallback to global client fields when no specific month requested
+      monthPlannedDate = client.nextFollowUpDate || null;
+      monthActualDate = client.lastFollowUpDate || null;
+      monthExecutive = client.followUpTakenBy || '';
+      monthFollowUpStatus = client.followUpStatus || 'Not Set';
+      monthRemark = client.lastFeedback || '';
+    }
+
     return {
       _id: client._id,
       uniqueId: client.uniqueId,
@@ -123,10 +200,15 @@ async function computeScotForDate(cutoffDate) {
       status,
       usualOrderGap,
       avgOrderSize,
+      // Month-specific follow-up fields
+      plannedDate: monthPlannedDate,
+      actualDate: monthActualDate,
+      followUpTakenBy: monthExecutive,
+      followUpStatus: monthFollowUpStatus,
+      remark: monthRemark,
+      // Master global fields preserved for backward compatibility
       lastFollowUpDate: client.lastFollowUpDate || null,
       nextFollowUpDate: client.nextFollowUpDate || null,
-      followUpTakenBy: client.followUpTakenBy || '',
-      followUpStatus: client.followUpStatus || 'Pending',
       lastFeedback: client.lastFeedback || ''
     };
   });
@@ -564,7 +646,7 @@ app.get('/api/scot-month/:monthKey', async (req, res) => {
     const monthInfo = FY_MONTHS.find(m => m.key.toLowerCase() === monthKey.toLowerCase()) || FY_MONTHS[0];
     const cutoffDate = new Date(monthInfo.endDate + 'T23:59:59.999Z');
 
-    const scotRows = await computeScotForDate(cutoffDate);
+    const scotRows = await computeScotForDate(cutoffDate, monthInfo);
 
     // Compute Summary Stats for this month:
     const totalClients = scotRows.length;
@@ -770,22 +852,52 @@ app.patch('/api/clients/:id/followup', async (req, res) => {
 
     await client.save();
 
-    // Also record a log entry in FollowUp collection
-    if (lastFeedback || followUpStatus === 'Taken / Done') {
-      await FollowUp.create({
-        clientId: client._id,
-        clientName: client.clientName,
-        contactNumber: client.contactNumber,
-        callDate: new Date(),
-        creName: client.followUpTakenBy || 'CRE Executive',
-        callStatus: followUpStatus === 'Taken / Done' ? 'Connected' : 'Call Back Requested',
-        customerFeedback: client.lastFeedback || 'Follow-up status updated directly.',
-        nextFollowUpDate: client.nextFollowUpDate,
-        isCompleted: followUpStatus === 'Taken / Done'
-      });
+    // Also record a log entry in FollowUp collection for audit trail & month tracking
+    const followUpLog = await FollowUp.create({
+      clientId: client._id,
+      clientName: client.clientName,
+      contactNumber: client.contactNumber,
+      callDate: followUpStatus === 'Taken / Done' ? new Date() : new Date(),
+      creName: client.followUpTakenBy || 'CRE Executive',
+      callStatus: followUpStatus === 'Taken / Done' ? 'Connected' : 'Call Back Requested',
+      customerFeedback: client.lastFeedback || (followUpStatus === 'Taken / Done' ? 'Follow-up taken and completed.' : 'Follow-up scheduled.'),
+      nextFollowUpDate: client.nextFollowUpDate,
+      isCompleted: followUpStatus === 'Taken / Done'
+    });
+
+    res.json({ success: true, client, followUp: followUpLog });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 9.1 Client Follow-up History Audit Trail API
+app.get('/api/clients/:id/followup-history', async (req, res) => {
+  try {
+    const client = await Client.findById(req.params.id).lean();
+    if (!client) {
+      return res.status(404).json({ success: false, error: 'Client not found' });
     }
 
-    res.json({ success: true, client });
+    const history = await FollowUp.find({
+      $or: [
+        { clientId: client._id },
+        { clientName: client.clientName }
+      ]
+    }).sort({ callDate: -1, createdAt: -1 }).lean();
+
+    res.json({
+      success: true,
+      client: {
+        _id: client._id,
+        uniqueId: client.uniqueId,
+        clientName: client.clientName,
+        contactNumber: client.contactNumber,
+        address: client.address
+      },
+      count: history.length,
+      history
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

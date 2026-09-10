@@ -356,9 +356,11 @@
                 <th>Total Invoices</th>
                 <th>Total Sales</th>
                 <th>Status</th>
-                <th>Next Follow-up Date</th>
+                <th>Planned Date</th>
+                <th>Actual Call Date</th>
                 <th>Follow-up By</th>
                 <th>Follow-up Status</th>
+                <th>Remark / Feedback</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -841,6 +843,54 @@ git push -u origin main</pre>
           <button type="submit" class="btn btn-primary">Save Follow-up Update</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal: Calendar Date Activities Popup Card -->
+  <div class="modal-overlay" id="calendarDateModal">
+    <div class="modal-content" style="max-width: 600px;">
+      <div class="modal-header">
+        <div>
+          <h3 id="calModalDateTitle" style="color: var(--accent-cyan);">📅 Date Activities & Follow-ups</h3>
+          <p id="calModalDateSub" style="color: var(--text-secondary); font-size: 0.82rem; margin-top: 2px;">Scheduled follow-ups and calls</p>
+        </div>
+        <button class="close-btn" onclick="closeCalendarDateModal()">&times;</button>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-bottom: 14px;">
+        <button class="btn btn-primary" id="btnCalModalAddAction" style="font-size: 0.8rem; padding: 6px 14px;">
+          + Log Call / Schedule Follow-up
+        </button>
+      </div>
+
+      <div id="calModalEventsList" style="max-height: 55vh; overflow-y: auto; padding-right: 4px;">
+        <!-- Filled dynamically -->
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+        <button type="button" class="btn btn-secondary" onclick="closeCalendarDateModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Client Complete Follow-up History Audit Trail -->
+  <div class="modal-overlay" id="clientHistoryModal">
+    <div class="modal-content" style="max-width: 750px;">
+      <div class="modal-header">
+        <div>
+          <h3 id="historyClientName" style="color: var(--accent-cyan);">📜 Client Follow-up History</h3>
+          <p id="historyClientDetails" style="color: var(--text-secondary); font-size: 0.82rem; margin-top: 2px;">Audit trail across all months</p>
+        </div>
+        <button class="close-btn" onclick="closeClientHistoryModal()">&times;</button>
+      </div>
+
+      <div id="historyTimelineList" style="max-height: 60vh; overflow-y: auto; padding-right: 6px;">
+        <!-- History items loaded dynamically -->
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+        <button type="button" class="btn btn-secondary" onclick="closeClientHistoryModal()">Close</button>
+      </div>
     </div>
   </div>
 
