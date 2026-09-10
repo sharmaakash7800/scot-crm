@@ -113,9 +113,23 @@
       </div>
     </header>
 
-    <!-- Month Filter Bar (Applicable to SCOT & Loss views) -->
-    <div class="month-filter-bar" id="monthFilterContainer">
-      <!-- Generated dynamically -->
+    <!-- Month Filter Bar (Dropdown & Quick Selectors) -->
+    <div class="month-filter-bar-wrapper" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 24px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <label style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; gap: 6px;">
+          <span>📅 Financial Month:</span>
+        </label>
+        <div class="custom-select-wrap" style="min-width: 220px;">
+          <select id="monthSelectDropdown" class="form-control" style="font-weight: 600; cursor: pointer; border-color: var(--accent-primary); box-shadow: 0 0 12px rgba(99,102,241,0.2);">
+            <!-- Options populated dynamically -->
+          </select>
+        </div>
+      </div>
+
+      <!-- Quick Scrollable Month Pills -->
+      <div class="month-filter-bar" id="monthFilterContainer" style="margin-bottom: 0; padding: 0;">
+        <!-- Generated dynamically -->
+      </div>
     </div>
 
     <!-- TAB 1: DASHBOARD -->
@@ -329,16 +343,16 @@
             <thead>
               <tr>
                 <th>Client Name</th>
-                <th>Contact Number</th>
-                <th>First Order</th>
-                <th>Last Order</th>
+                <th>Contact</th>
                 <th>Days Since</th>
-                <th>Last Invoice</th>
-                <th>Last Amount</th>
+                <th>Last Order</th>
                 <th>Total Invoices</th>
                 <th>Total Sales</th>
                 <th>Status</th>
-                <th>Avg Size</th>
+                <th>Next Follow-up Date</th>
+                <th>Follow-up By</th>
+                <th>Follow-up Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -500,9 +514,33 @@
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-          <!-- Dropzone -->
+          <!-- Left Column: Google Sheets Sync & Excel Dropzone -->
           <div>
-            <h4 style="margin-bottom: 12px;">Import Excel (.xlsx)</h4>
+            <!-- Google Sheets Live Link Card -->
+            <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-glow); border-radius: var(--radius-lg); padding: 22px; margin-bottom: 24px;">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <span style="font-size: 1.6rem;">📊</span>
+                <div>
+                  <h4 style="color: var(--text-primary); font-size: 1.05rem;">Google Sheets Live Sync (गूगल शीट लिंक करें)</h4>
+                  <p style="color: var(--text-secondary); font-size: 0.8rem;">Directly sync Client Master or Transactions from a Google Spreadsheet link</p>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Google Sheet Shareable Link (Anyone with link can view) *</label>
+                <input type="url" class="form-control" id="googleSheetUrlInput" placeholder="https://docs.google.com/spreadsheets/d/your-sheet-id/edit#gid=0">
+              </div>
+
+              <div style="display: flex; gap: 10px;">
+                <button class="btn btn-primary" id="btnSyncGoogleSheet" style="background: linear-gradient(135deg, #059669, #10b981); flex: 1;">
+                  🔄 Fetch & Sync Google Sheet Now
+                </button>
+              </div>
+              <div id="googleSheetSyncStatus" style="margin-top: 10px; font-size: 0.85rem;"></div>
+            </div>
+
+            <!-- Excel Dropzone -->
+            <h4 style="margin-bottom: 12px;">Local Excel File (.xlsx)</h4>
             <div class="dropzone" id="dropzoneBox">
               <div class="dropzone-icon">📁</div>
               <h3>Drop Monthly_Scot_Automated_FY26-27.xlsx here</h3>
@@ -715,6 +753,55 @@ git push -u origin main</pre>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
           <button type="button" class="btn btn-secondary" onclick="closeCREModal()">Cancel</button>
           <button type="submit" class="btn btn-primary" style="background: linear-gradient(135deg, #10b981, #059669);">Save & Schedule in Calendar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Quick Client Follow-up Status Update -->
+  <div class="modal-overlay" id="quickFollowUpModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="quickFollowUpTitle">⚡ Update Client Follow-Up Status</h3>
+        <button class="close-btn" onclick="closeQuickFollowUpModal()">&times;</button>
+      </div>
+      <form id="quickFollowUpForm">
+        <input type="hidden" id="quickFollowUpClientId">
+        
+        <div class="form-group">
+          <label class="form-label">Client Name</label>
+          <input type="text" class="form-control" id="quickFollowUpClientName" readonly style="background: rgba(255,255,255,0.02); font-weight: 700;">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Follow-up Status (लिया या Pending h) *</label>
+            <select class="form-control" id="quickFollowUpStatus" required>
+              <option value="Pending">⏳ Pending (Follow-up lena h)</option>
+              <option value="Taken / Done">✅ Taken / Done (Follow-up le liya)</option>
+              <option value="Not Required">⚪ Not Required</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Kon Follow-up ley rha h (Executive Name) *</label>
+            <input type="text" class="form-control" id="quickFollowUpTakenBy" required placeholder="e.g. Priya Sharma / Amit">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Next Follow-up Date (कब Follow-up lena h) *</label>
+          <input type="date" class="form-control" id="quickNextFollowUpDate" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Customer Feedback / Note *</label>
+          <textarea class="form-control" id="quickLastFeedback" rows="3" required placeholder="Customer ka kya feedback rha (e.g. Rate issue, asked to call next Monday)..."></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+          <button type="button" class="btn btn-secondary" onclick="closeQuickFollowUpModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Follow-up Update</button>
         </div>
       </form>
     </div>

@@ -55,10 +55,22 @@ function switchTab(tabId) {
   if (tabId === 'enquiries') loadEnquiries();
 }
 
-// Month Selector Rendering
+// Month Selector Rendering (Pills + Dropdown)
 function renderMonthPills(months) {
   currentMonthsList = months;
   const container = document.getElementById('monthFilterContainer');
+  const dropdown = document.getElementById('monthSelectDropdown');
+
+  if (dropdown) {
+    dropdown.innerHTML = months.map(m => `
+      <option value="${m.key}" ${m.key === currentMonthKey ? 'selected' : ''}>${m.name} (${m.key})</option>
+    `).join('');
+
+    dropdown.onchange = (e) => {
+      selectMonth(e.target.value);
+    };
+  }
+
   if (!container) return;
   container.innerHTML = '';
 
@@ -67,16 +79,32 @@ function renderMonthPills(months) {
     pill.className = `month-pill ${m.key === currentMonthKey ? 'active' : ''}`;
     pill.innerText = m.name;
     pill.onclick = () => {
-      currentMonthKey = m.key;
-      document.querySelectorAll('.month-pill').forEach(p => p.classList.remove('active'));
-      pill.classList.add('active');
-      loadDashboard();
-      if (document.getElementById('tab-scot-monthly').classList.contains('active')) {
-        loadScotMonthly();
-      }
+      selectMonth(m.key);
     };
     container.appendChild(pill);
   });
+}
+
+function selectMonth(monthKey) {
+  currentMonthKey = monthKey;
+  
+  // Sync dropdown
+  const dropdown = document.getElementById('monthSelectDropdown');
+  if (dropdown) dropdown.value = monthKey;
+
+  // Sync pills
+  document.querySelectorAll('.month-pill').forEach(p => {
+    if (p.innerText.includes(monthKey) || p.innerText === (currentMonthsList.find(m => m.key === monthKey)?.name)) {
+      p.classList.add('active');
+    } else {
+      p.classList.remove('active');
+    }
+  });
+
+  loadDashboard();
+  if (document.getElementById('tab-scot-monthly').classList.contains('active')) {
+    loadScotMonthly();
+  }
 }
 
 // 1. Dashboard Loader
@@ -268,21 +296,32 @@ function renderScotTable(records) {
     return;
   }
 
-  tbody.innerHTML = records.map(r => `
-    <tr>
-      <td><strong>${r.clientName}</strong></td>
-      <td>${r.contactNumber || '-'}</td>
-      <td>${formatDate(r.firstOrderDate)}</td>
-      <td>${formatDate(r.lastOrderDate)}</td>
-      <td><span style="font-weight: 600;">${r.daysSinceLastOrder === 9999 ? '9999' : r.daysSinceLastOrder}</span></td>
-      <td>${r.lastInvoiceNo || '-'}</td>
-      <td>${formatCurrency(r.lastOrderAmount)}</td>
-      <td>${r.totalInvoices}</td>
-      <td><strong>${formatCurrency(r.totalSales)}</strong></td>
-      <td>${getStatusBadge(r.status)}</td>
-      <td>${formatCurrency(r.avgOrderSize)}</td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = records.map(r => {
+    const isTaken = r.followUpStatus === 'Taken / Done';
+    const statusBadge = isTaken
+      ? '<span class="badge badge-active">✅ Taken / Done</span>'
+      : (r.nextFollowUpDate ? '<span class="badge badge-slow">⏳ Pending</span>' : '<span class="badge badge-none">Not Set</span>');
+
+    return `
+      <tr>
+        <td><strong>${r.clientName}</strong></td>
+        <td>${r.contactNumber || '-'}</td>
+        <td><span style="font-weight: 600;">${r.daysSinceLastOrder === 9999 ? '9999' : r.daysSinceLastOrder}</span></td>
+        <td>${formatDate(r.lastOrderDate)}</td>
+        <td>${r.totalInvoices}</td>
+        <td><strong>${formatCurrency(r.totalSales)}</strong></td>
+        <td>${getStatusBadge(r.status)}</td>
+        <td><strong style="color: var(--accent-cyan);">${formatDate(r.nextFollowUpDate)}</strong></td>
+        <td>${r.followUpTakenBy || '<span style="color: var(--text-muted);">-</span>'}</td>
+        <td>${statusBadge}</td>
+        <td>
+          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.74rem;" onclick="openQuickFollowUpModal('${r._id}', '${r.clientName.replace(/'/g, "\\'")}', '${r.nextFollowUpDate ? r.nextFollowUpDate.split('T')[0] : ''}', '${(r.followUpTakenBy || '').replace(/'/g, "\\'")}', '${r.followUpStatus || 'Pending'}', '${(r.lastFeedback || '').replace(/'/g, "\\'")}')">
+            ⚡ Set Follow-up
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
 // Filter SCOT table
@@ -1043,6 +1082,85 @@ document.getElementById('creForm')?.addEventListener('submit', async (e) => {
 
 // Attach top header button
 document.getElementById('btnLogCRECall')?.addEventListener('click', () => openCREModal());
+
+// ==================== QUICK CLIENT FOLLOW-UP MODAL ==================== //
+function openQuickFollowUpModal(clientId, clientName, nextDate, takenBy, status, feedback) {
+  document.getElementById('quickFollowUpClientId').value = clientId;
+  document.getElementById('quickFollowUpClientName').value = clientName;
+  document.getElementById('quickNextFollowUpDate').value = nextDate || new Date().toISOString().split('T')[0];
+  document.getElementById('quickFollowUpTakenBy').value = takenBy || 'CRE Executive';
+  document.getElementById('quickFollowUpStatus').value = status || 'Pending';
+  document.getElementById('quickLastFeedback').value = feedback || '';
+  document.getElementById('quickFollowUpModal').classList.add('active');
+}
+
+function closeQuickFollowUpModal() {
+  document.getElementById('quickFollowUpModal').classList.remove('active');
+  document.getElementById('quickFollowUpForm').reset();
+}
+
+document.getElementById('quickFollowUpForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const clientId = document.getElementById('quickFollowUpClientId').value;
+  const body = {
+    nextFollowUpDate: document.getElementById('quickNextFollowUpDate').value,
+    followUpTakenBy: document.getElementById('quickFollowUpTakenBy').value,
+    followUpStatus: document.getElementById('quickFollowUpStatus').value,
+    lastFeedback: document.getElementById('quickLastFeedback').value
+  };
+
+  try {
+    const res = await fetch(`/api/clients/${clientId}/followup`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.success) {
+      closeQuickFollowUpModal();
+      loadScotMonthly();
+      loadTodayFollowUpAgenda();
+      alert('✅ Follow-up status & Next date updated successfully!');
+    } else {
+      alert('Error updating follow-up: ' + data.error);
+    }
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
+});
+
+// ==================== GOOGLE SHEETS LIVE SYNC ==================== //
+document.getElementById('btnSyncGoogleSheet')?.addEventListener('click', async () => {
+  const urlInput = document.getElementById('googleSheetUrlInput');
+  const statusDiv = document.getElementById('googleSheetSyncStatus');
+  const sheetUrl = (urlInput.value || '').trim();
+
+  if (!sheetUrl) {
+    alert('Please enter your Google Sheet link!');
+    return;
+  }
+
+  statusDiv.innerHTML = '<span style="color: var(--accent-cyan);">⏳ Connecting to Google Sheets and syncing data to MongoDB...</span>';
+
+  try {
+    const res = await fetch('/api/sync-google-sheet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sheetUrl })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      statusDiv.innerHTML = `<span style="color: #10b981;">✅ ${data.message}</span>`;
+      loadDashboard();
+      loadTodayFollowUpAgenda();
+    } else {
+      statusDiv.innerHTML = `<span style="color: #f43f5e;">❌ ${data.error}</span>`;
+    }
+  } catch (err) {
+    statusDiv.innerHTML = `<span style="color: #f43f5e;">❌ Connection failed: ${err.message}</span>`;
+  }
+});
 
 // Export Current Sheet
 document.getElementById('btnExportCurrent')?.addEventListener('click', () => {

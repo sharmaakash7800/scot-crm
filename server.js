@@ -122,7 +122,12 @@ async function computeScotForDate(cutoffDate) {
       totalSales,
       status,
       usualOrderGap,
-      avgOrderSize
+      avgOrderSize,
+      lastFollowUpDate: client.lastFollowUpDate || null,
+      nextFollowUpDate: client.nextFollowUpDate || null,
+      followUpTakenBy: client.followUpTakenBy || '',
+      followUpStatus: client.followUpStatus || 'Pending',
+      lastFeedback: client.lastFeedback || ''
     };
   });
 
@@ -495,6 +500,17 @@ app.post('/api/followups', async (req, res) => {
     });
 
     await followUp.save();
+
+    // Sync latest follow-up status, executive name, and next date to Client Master
+    if (clientDoc) {
+      clientDoc.lastFollowUpDate = followUp.callDate;
+      clientDoc.nextFollowUpDate = followUp.nextFollowUpDate;
+      clientDoc.followUpTakenBy = followUp.creName;
+      clientDoc.followUpStatus = 'Taken / Done';
+      clientDoc.lastFeedback = followUp.customerFeedback;
+      await clientDoc.save();
+    }
+
     res.json({ success: true, followUp });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -714,6 +730,159 @@ app.get('/api/export/scot/:monthKey', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="SCOT_${monthInfo.key}.xlsx"`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buf);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 9. Quick Update Client Follow-Up Details (Inline or via Table)
+app.patch('/api/clients/:id/followup', async (req, res) => {
+  try {
+    const { nextFollowUpDate, followUpTakenBy, followUpStatus, lastFeedback } = req.body;
+    const client = await Client.findById(req.params.id);
+    if (!client) {
+      return res.status(404).json({ success: false, error: 'Client not found' });
+    }
+
+    if (nextFollowUpDate !== undefined) client.nextFollowUpDate = nextFollowUpDate ? new Date(nextFollowUpDate) : null;
+    if (followUpTakenBy !== undefined) client.followUpTakenBy = followUpTakenBy.trim();
+    if (followUpStatus !== undefined) client.followUpStatus = followUpStatus;
+    if (lastFeedback !== undefined) client.lastFeedback = lastFeedback.trim();
+    if (followUpStatus === 'Taken / Done') {
+      client.lastFollowUpDate = new Date();
+    }
+
+    await client.save();
+
+    // Also record a log entry in FollowUp collection
+    if (lastFeedback || followUpStatus === 'Taken / Done') {
+      await FollowUp.create({
+        clientId: client._id,
+        clientName: client.clientName,
+        contactNumber: client.contactNumber,
+        callDate: new Date(),
+        creName: client.followUpTakenBy || 'CRE Executive',
+        callStatus: followUpStatus === 'Taken / Done' ? 'Connected' : 'Call Back Requested',
+        customerFeedback: client.lastFeedback || 'Follow-up status updated directly.',
+        nextFollowUpDate: client.nextFollowUpDate,
+        isCompleted: followUpStatus === 'Taken / Done'
+      });
+    }
+
+    res.json({ success: true, client });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 10. Google Sheets Sync API (Sync via Google Sheets CSV / Publish URL)
+app.post('/api/sync-google-sheet', async (req, res) => {
+  try {
+    const { sheetUrl } = req.body;
+    if (!sheetUrl) {
+      return res.status(400).json({ success: false, error: 'Google Sheet URL is required' });
+    }
+
+    // Convert standard Google Sheet URL to direct CSV export link if necessary
+    // Example: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit#gid=0
+    // Becomes: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/export?format=csv
+    let exportUrl = sheetUrl.trim();
+    const sheetMatch = exportUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (sheetMatch && sheetMatch[1]) {
+      const sheetId = sheetMatch[1];
+      // Check if gid is present
+      const gidMatch = exportUrl.match(/[#&]gid=([0-9]+)/);
+      const gidParam = gidMatch && gidMatch[1] ? `&gid=${gidMatch[1]}` : '';
+      exportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv${gidParam}`;
+    }
+
+    console.log(`Connecting and fetching Google Sheet from: ${exportUrl}`);
+    const fetchResponse = await fetch(exportUrl);
+    if (!fetchResponse.ok) {
+      throw new Error(`Failed to fetch Google Sheet: ${fetchResponse.statusText}. Please ensure sheet link sharing is set to "Anyone with the link can view".`);
+    }
+
+    const csvText = await fetchResponse.text();
+    const workbook = xlsx.read(csvText, { type: 'string' });
+    const sheetName = workbook.SheetNames[0];
+    const rows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
+
+    if (!rows || rows.length < 2) {
+      return res.status(400).json({ success: false, error: 'Google Sheet appears empty or has no header row.' });
+    }
+
+    // Determine data type by examining headers
+    const headerRow = rows[0].map(h => String(h || '').toLowerCase().trim());
+    let importedClients = 0;
+    let importedTransactions = 0;
+
+    const isTxSheet = headerRow.some(h => h.includes('amount') || h.includes('invoice'));
+    const isClientSheet = headerRow.some(h => h.includes('client') || h.includes('customer') || h.includes('name'));
+
+    if (isTxSheet) {
+      // Import as Transactions
+      const dateIdx = headerRow.findIndex(h => h.includes('date'));
+      const nameIdx = headerRow.findIndex(h => h.includes('client') || h.includes('customer') || h.includes('name'));
+      const invIdx = headerRow.findIndex(h => h.includes('invoice'));
+      const amtIdx = headerRow.findIndex(h => h.includes('amount') || h.includes('sale') || h.includes('val'));
+
+      const txs = [];
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || !row[nameIdx]) continue;
+        const cName = String(row[nameIdx]).trim();
+        const amt = cleanNumber(row[amtIdx]);
+        const d = dateIdx !== -1 ? parseDate(row[dateIdx]) : new Date();
+        const inv = invIdx !== -1 && row[invIdx] ? String(row[invIdx]).trim() : '';
+
+        txs.push({
+          date: d || new Date(),
+          clientName: cName,
+          invoiceNo: inv,
+          amount: amt
+        });
+      }
+
+      if (txs.length > 0) {
+        await Transaction.insertMany(txs);
+        importedTransactions = txs.length;
+      }
+    } else if (isClientSheet) {
+      // Import as Clients
+      const nameIdx = headerRow.findIndex(h => h.includes('name') || h.includes('client') || h.includes('customer'));
+      const contactIdx = headerRow.findIndex(h => h.includes('contact') || h.includes('phone') || h.includes('mobile'));
+      const addrIdx = headerRow.findIndex(h => h.includes('address') || h.includes('location'));
+      const gapIdx = headerRow.findIndex(h => h.includes('gap') || h.includes('usual'));
+
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || !row[nameIdx]) continue;
+        const cName = String(row[nameIdx]).trim();
+        const contact = contactIdx !== -1 && row[contactIdx] ? String(row[contactIdx]).trim() : '';
+        const address = addrIdx !== -1 && row[addrIdx] ? String(row[addrIdx]).trim() : '';
+        const gap = gapIdx !== -1 ? cleanNumber(row[gapIdx]) : 0;
+
+        await Client.findOneAndUpdate(
+          { clientName: { $regex: `^${cName}$`, $options: 'i' } },
+          {
+            $setOnInsert: {
+              uniqueId: `Scot${String(Date.now()).slice(-4)}${i}`
+            },
+            clientName: cName,
+            contactNumber: contact,
+            address,
+            usualOrderGap: gap
+          },
+          { upsert: true }
+        );
+        importedClients++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Google Sheet synced successfully! Processed ${rows.length - 1} rows (${importedTransactions} transactions, ${importedClients} clients).`
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
