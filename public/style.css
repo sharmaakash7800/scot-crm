@@ -691,9 +691,86 @@ body {
   outline: none;
 }
 
+/* Explicit Select Dropdown & Option Styling (Ensure options are crystal clear and visible) */
+select.form-control {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
+select.form-control option {
+  background-color: #1a2234 !important;
+  color: #ffffff !important;
+  padding: 12px 14px;
+  font-size: 0.92rem;
+}
+
+[data-theme="light"] select.form-control option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
 .form-control:focus {
   border-color: var(--accent-primary);
   background: var(--input-bg);
+}
+
+/* Sidebar Toggle & Auto-Remove / Collapse Mechanism */
+.sidebar-toggle-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.25rem;
+  transition: var(--transition);
+  margin-right: 14px;
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--accent-primary);
+  transform: scale(1.05);
+}
+
+/* When sidebar is collapsed / auto-removed */
+body.sidebar-collapsed .sidebar {
+  transform: translateX(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.sidebar-collapsed .main-wrapper {
+  margin-left: 0 !important;
+  max-width: 100% !important;
+  padding: 28px 48px 40px;
+}
+
+/* Backdrop for auto-closing on outside click */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  z-index: 40;
+}
+
+body:not(.sidebar-collapsed) .sidebar-backdrop {
+  display: block;
+}
+
+@media (min-width: 1200px) {
+  body:not(.sidebar-collapsed) .sidebar-backdrop {
+    display: none; /* Only need backdrop on screens or when user explicitly wants modal feel */
+  }
 }
 
 /* Upload Dropzone */

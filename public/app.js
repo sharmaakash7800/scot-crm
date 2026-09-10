@@ -44,6 +44,11 @@ function switchTab(tabId) {
     }
   });
 
+  // Auto-remove / close sidebar on small screens after clicking a link
+  if (window.innerWidth < 1100) {
+    document.body.classList.add('sidebar-collapsed');
+  }
+
   // Load specific tab data
   if (tabId === 'dashboard') loadDashboard();
   if (tabId === 'cre-followups') loadCREFollowUps();
@@ -1196,9 +1201,34 @@ document.querySelectorAll('.nav-link').forEach(link => {
   });
 });
 
+// ==================== SIDEBAR AUTO-REMOVE & TOGGLE ==================== //
+function initSidebar() {
+  const toggleBtn = document.getElementById('btnSidebarToggle');
+  const backdrop = document.getElementById('sidebarBackdrop');
+
+  // Toggle button click
+  toggleBtn?.addEventListener('click', () => {
+    document.body.classList.toggle('sidebar-collapsed');
+    localStorage.setItem('scot_sidebar_collapsed', document.body.classList.contains('sidebar-collapsed'));
+  });
+
+  // Auto-remove when clicking outside / on backdrop
+  backdrop?.addEventListener('click', () => {
+    document.body.classList.add('sidebar-collapsed');
+    localStorage.setItem('scot_sidebar_collapsed', true);
+  });
+
+  // Check saved state or auto-remove on smaller laptop/tablet screens
+  const savedState = localStorage.getItem('scot_sidebar_collapsed');
+  if (savedState === 'true' || window.innerWidth < 1100) {
+    document.body.classList.add('sidebar-collapsed');
+  }
+}
+
 // Initialize on page load
 window.addEventListener('DOMContentLoaded', () => {
   initTheme();
+  initSidebar();
   loadDashboard();
 });
 

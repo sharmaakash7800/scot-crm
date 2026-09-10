@@ -92,13 +92,21 @@
     </div>
   </aside>
 
+  <!-- Sidebar Backdrop for auto-closing on outside click -->
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
   <!-- Main Content Area -->
   <main class="main-wrapper">
     <!-- Top Header -->
     <header class="top-header">
-      <div class="page-title">
-        <h1 id="pageHeading">SCOT Analytics Dashboard</h1>
-        <p id="pageSubHeading">Automated FY 2026-27 Client Order & Lost Sales Intelligence</p>
+      <div style="display: flex; align-items: center;">
+        <button class="sidebar-toggle-btn" id="btnSidebarToggle" title="Toggle / Auto-remove Sidebar">
+          ☰
+        </button>
+        <div class="page-title">
+          <h1 id="pageHeading">SCOT Analytics Dashboard</h1>
+          <p id="pageSubHeading">Automated FY 2026-27 Client Order & Lost Sales Intelligence</p>
+        </div>
       </div>
       <div class="header-actions">
         <!-- Day / Night Mode Toggle -->
