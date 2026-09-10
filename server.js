@@ -489,19 +489,82 @@ app.get('/api/followups', async (req, res) => {
   }
 });
 
-// Today's Follow-up agenda with complete client details
+// Today's Follow-up agenda with complete client details, quick filters, executive filter & counters
 app.get('/api/followups/today', async (req, res) => {
   try {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
+    const { filter, date, executive, search } = req.query;
 
-    // Find followups scheduled for today or overdue pending followups
-    const scheduled = await FollowUp.find({
-      nextFollowUpDate: { $lte: endOfDay },
-      isCompleted: { $ne: true }
-    }).sort({ nextFollowUpDate: 1 }).lean();
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(now);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    const tomorrowEnd = new Date(todayEnd);
+    tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
+
+    // Compute live counters across the system
+    const [pendingCount, dueTodayCount, dueTomorrowCount, overdueCount, completedCount, totalAssignedCount, distinctCREs] = await Promise.all([
+      FollowUp.countDocuments({ isCompleted: { $ne: true } }),
+      FollowUp.countDocuments({
+        nextFollowUpDate: { $gte: todayStart, $lte: todayEnd },
+        isCompleted: { $ne: true }
+      }),
+      FollowUp.countDocuments({
+        nextFollowUpDate: { $gte: tomorrowStart, $lte: tomorrowEnd },
+        isCompleted: { $ne: true }
+      }),
+      FollowUp.countDocuments({
+        nextFollowUpDate: { $lt: todayStart },
+        isCompleted: { $ne: true }
+      }),
+      FollowUp.countDocuments({ isCompleted: true }),
+      FollowUp.countDocuments({}),
+      FollowUp.distinct('creName')
+    ]);
+
+    // Build specific query for the agenda list based on filters
+    let query = {};
+
+    if (filter === 'tomorrow') {
+      query.nextFollowUpDate = { $gte: tomorrowStart, $lte: tomorrowEnd };
+      query.isCompleted = { $ne: true };
+    } else if (filter === 'overdue') {
+      query.nextFollowUpDate = { $lt: todayStart };
+      query.isCompleted = { $ne: true };
+    } else if (filter === 'completed') {
+      query.isCompleted = true;
+    } else if (filter === 'all') {
+      // no date restriction
+    } else if (date) {
+      const selected = new Date(date);
+      const selStart = new Date(selected);
+      selStart.setHours(0, 0, 0, 0);
+      const selEnd = new Date(selected);
+      selEnd.setHours(23, 59, 59, 999);
+      query.nextFollowUpDate = { $gte: selStart, $lte: selEnd };
+    } else {
+      // Default: Today or overdue pending
+      query.nextFollowUpDate = { $lte: todayEnd };
+      query.isCompleted = { $ne: true };
+    }
+
+    if (executive && executive.trim() && executive !== 'all') {
+      query.creName = executive.trim();
+    }
+
+    if (search && search.trim()) {
+      const sRegex = new RegExp(search.trim(), 'i');
+      query.$or = [
+        { clientName: sRegex },
+        { contactNumber: sRegex },
+        { creName: sRegex }
+      ];
+    }
+
+    const scheduled = await FollowUp.find(query).sort({ nextFollowUpDate: 1 }).lean();
 
     // Populate client details
     const populated = await Promise.all(
@@ -518,6 +581,7 @@ app.get('/api/followups/today', async (req, res) => {
           clientDetails: client || {
             clientName: f.clientName,
             contactNumber: f.contactNumber,
+            uniqueId: client?.uniqueId || '',
             address: '-',
             usualOrderGap: 0
           }
@@ -525,7 +589,20 @@ app.get('/api/followups/today', async (req, res) => {
       })
     );
 
-    res.json({ success: true, count: populated.length, followups: populated });
+    res.json({
+      success: true,
+      count: populated.length,
+      followups: populated,
+      counts: {
+        pending: pendingCount,
+        dueToday: dueTodayCount,
+        dueTomorrow: dueTomorrowCount,
+        overdue: overdueCount,
+        completed: completedCount,
+        totalAssigned: totalAssignedCount
+      },
+      executives: distinctCREs.filter(Boolean)
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

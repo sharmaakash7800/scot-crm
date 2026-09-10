@@ -19,11 +19,11 @@ function formatDate(dateStr) {
 
 function getStatusBadge(status) {
   if (!status) return '<span class="badge badge-none">-</span>';
-  if (status.startsWith('Active')) return `<span class="badge badge-active">🟢 ${status}</span>`;
-  if (status.startsWith('Slow')) return `<span class="badge badge-slow">🟡 ${status}</span>`;
-  if (status.startsWith('At Risk')) return `<span class="badge badge-risk">🟠 ${status}</span>`;
-  if (status.startsWith('Inactive')) return `<span class="badge badge-inactive">🔴 ${status}</span>`;
-  return `<span class="badge badge-none">⚪ ${status}</span>`;
+  if (status.startsWith('Active')) return `<span class="badge badge-active"><span class="badge-dot">●</span> ${status}</span>`;
+  if (status.startsWith('Slow')) return `<span class="badge badge-slow"><span class="badge-dot">●</span> ${status}</span>`;
+  if (status.startsWith('At Risk')) return `<span class="badge badge-risk"><span class="badge-dot">●</span> ${status}</span>`;
+  if (status.startsWith('Inactive')) return `<span class="badge badge-inactive"><span class="badge-dot">●</span> ${status}</span>`;
+  return `<span class="badge badge-none"><span class="badge-dot">●</span> ${status}</span>`;
 }
 
 // Navigation & Tab Switching
@@ -314,12 +314,12 @@ function renderScotTable(records) {
 
     return `
       <tr>
-        <td><strong>${r.clientName}</strong></td>
+        <td class="col-client"><strong>${r.clientName}</strong></td>
         <td>${r.contactNumber || '-'}</td>
-        <td><span style="font-weight: 600;">${r.daysSinceLastOrder === 9999 ? '9999' : r.daysSinceLastOrder}</span></td>
+        <td class="col-numeric"><span style="font-weight: 600;">${r.daysSinceLastOrder === 9999 ? '9999' : r.daysSinceLastOrder}</span></td>
         <td>${formatDate(r.lastOrderDate)}</td>
-        <td>${r.totalInvoices}</td>
-        <td><strong>${formatCurrency(r.totalSales)}</strong></td>
+        <td class="col-numeric">${r.totalInvoices}</td>
+        <td class="col-numeric"><strong>${formatCurrency(r.totalSales)}</strong></td>
         <td>${getStatusBadge(r.status)}</td>
         <td>${plannedDisplay}</td>
         <td>${actualDisplay}</td>
@@ -328,10 +328,10 @@ function renderScotTable(records) {
         <td>${remarkDisplay}</td>
         <td>
           <div style="display: flex; gap: 6px; align-items: center;">
-            <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.74rem;" title="Update follow-up for this month" onclick="openQuickFollowUpModal('${r._id}', '${r.clientName.replace(/'/g, "\\'")}', '${r.plannedDate ? r.plannedDate.split('T')[0] : ''}', '${(r.followUpTakenBy || '').replace(/'/g, "\\'")}', '${r.followUpStatus || 'Pending'}', '${(r.remark || '').replace(/'/g, "\\'")}')">
+            <button class="btn btn-secondary btn-action-sm" title="Update follow-up for this month" onclick="openQuickFollowUpModal('${r._id}', '${r.clientName.replace(/'/g, "\\'")}', '${r.plannedDate ? r.plannedDate.split('T')[0] : ''}', '${(r.followUpTakenBy || '').replace(/'/g, "\\'")}', '${r.followUpStatus || 'Pending'}', '${(r.remark || '').replace(/'/g, "\\'")}')">
               ⚡ Set
             </button>
-            <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.74rem; color: var(--accent-cyan);" title="View complete follow-up audit trail" onclick="viewClientHistory('${r._id}')">
+            <button class="btn btn-secondary btn-action-sm" style="color: var(--accent-cyan);" title="View complete follow-up audit trail" onclick="viewClientHistory('${r._id}')">
               📜 History
             </button>
           </div>
@@ -758,22 +758,83 @@ async function loadCREFollowUps() {
   ]);
 }
 
-// 1. Today's Agenda (आज किसका Follow-up लेना है)
+// State for Agenda Filters
+let agendaFilterState = {
+  filter: 'today', // 'today', 'tomorrow', 'overdue', 'completed', 'all'
+  date: '',
+  executive: 'all',
+  search: ''
+};
+
+// 1. Follow-up Agenda (आज किसका Follow-up लेना है) with filter bar & live counter cards
 async function loadTodayFollowUpAgenda() {
   const container = document.getElementById('todayAgendaList');
   if (!container) return;
 
   try {
-    const res = await fetch('/api/followups/today');
+    const params = new URLSearchParams();
+    if (agendaFilterState.filter) params.append('filter', agendaFilterState.filter);
+    if (agendaFilterState.date) params.append('date', agendaFilterState.date);
+    if (agendaFilterState.executive && agendaFilterState.executive !== 'all') {
+      params.append('executive', agendaFilterState.executive);
+    }
+    if (agendaFilterState.search) params.append('search', agendaFilterState.search);
+
+    const res = await fetch(`/api/followups/today?${params.toString()}`);
     const data = await res.json();
     const list = data.followups || [];
+    const counts = data.counts || {};
+    const executives = data.executives || [];
+
+    // 1. Update 6 Counter Cards
+    const elPending = document.getElementById('counterValPending');
+    const elDueToday = document.getElementById('counterValDueToday');
+    const elDueTomorrow = document.getElementById('counterValDueTomorrow');
+    const elOverdue = document.getElementById('counterValOverdue');
+    const elCompleted = document.getElementById('counterValCompleted');
+    const elTotal = document.getElementById('counterValTotalAssigned');
+
+    if (elPending) elPending.innerText = counts.pending ?? 0;
+    if (elDueToday) elDueToday.innerText = counts.dueToday ?? 0;
+    if (elDueTomorrow) elDueTomorrow.innerText = counts.dueTomorrow ?? 0;
+    if (elOverdue) elOverdue.innerText = counts.overdue ?? 0;
+    if (elCompleted) elCompleted.innerText = counts.completed ?? 0;
+    if (elTotal) elTotal.innerText = counts.totalAssigned ?? 0;
+
+    // 2. Populate Responsible Person Dropdown if not yet filled
+    const elExecSelect = document.getElementById('agendaResponsiblePerson');
+    if (elExecSelect && elExecSelect.options.length <= 1 && executives.length > 0) {
+      executives.forEach(name => {
+        if (!name) return;
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.innerText = name;
+        elExecSelect.appendChild(opt);
+      });
+      if (agendaFilterState.executive) {
+        elExecSelect.value = agendaFilterState.executive;
+      }
+    }
+
+    // 3. Update Subtitle based on active filter
+    const subTitle = document.getElementById('agendaSubtitle');
+    if (subTitle) {
+      let filterDesc = 'Scheduled calls';
+      if (agendaFilterState.filter === 'today') filterDesc = 'Scheduled calls due today';
+      else if (agendaFilterState.filter === 'tomorrow') filterDesc = 'Scheduled calls due tomorrow';
+      else if (agendaFilterState.filter === 'overdue') filterDesc = 'Overdue follow-ups needing immediate action';
+      else if (agendaFilterState.filter === 'completed') filterDesc = 'Completed customer follow-ups';
+      else if (agendaFilterState.filter === 'all') filterDesc = 'All assigned client follow-ups';
+      else if (agendaFilterState.date) filterDesc = `Scheduled calls for ${formatDate(agendaFilterState.date)}`;
+      subTitle.innerText = `${filterDesc} (${list.length} records found) with complete customer profile & feedback`;
+    }
 
     if (list.length === 0) {
       container.innerHTML = `
         <div style="text-align: center; padding: 40px; background: rgba(255,255,255,0.02); border-radius: var(--radius-md); border: 1px dashed var(--border-color);">
           <div style="font-size: 2.2rem; margin-bottom: 8px;">🎉</div>
-          <h4 style="color: var(--text-primary);">All Follow-ups for Today are Done!</h4>
-          <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">Aaj koi pending follow-up scheduled nahi hai. Click "+ Log New Call" to schedule customer follow-ups.</p>
+          <h4 style="color: var(--text-primary);">No Follow-ups Found for Current Filter</h4>
+          <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">Is filter ke liye koi follow-up record match nahi hua. Quick buttons se filter change karein ya "+ Log New Call" se schedule karein.</p>
         </div>
       `;
       return;
@@ -781,15 +842,33 @@ async function loadTodayFollowUpAgenda() {
 
     container.innerHTML = list.map(item => {
       const client = item.clientDetails || {};
-      const isOverdue = new Date(item.nextFollowUpDate).setHours(0,0,0,0) < new Date().setHours(0,0,0,0);
+      const isOverdue = item.nextFollowUpDate && new Date(item.nextFollowUpDate).setHours(0,0,0,0) < new Date().setHours(0,0,0,0);
+      const isCompleted = item.isCompleted;
+
+      let badgeClass = 'badge-active';
+      let badgeText = '📞 Due Today';
+      let borderClr = 'var(--accent-primary)';
+
+      if (isCompleted) {
+        badgeClass = 'badge-active';
+        badgeText = '✓ Completed';
+        borderClr = 'var(--accent-emerald)';
+      } else if (isOverdue) {
+        badgeClass = 'badge-inactive';
+        badgeText = '⚠️ Overdue Follow-up';
+        borderClr = 'var(--accent-rose)';
+      } else if (item.nextFollowUpDate) {
+        badgeClass = 'badge-slow';
+        badgeText = `📅 Scheduled: ${formatDate(item.nextFollowUpDate)}`;
+        borderClr = 'var(--accent-cyan)';
+      }
 
       return `
-        <div class="agenda-card" style="border-left: 4px solid ${isOverdue ? '#f43f5e' : '#10b981'};">
+        <div class="agenda-card" style="border-left: 4px solid ${borderClr};">
           <div style="flex: 1;">
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-              <span class="badge ${isOverdue ? 'badge-inactive' : 'badge-active'}">
-                ${isOverdue ? '⚠️ Overdue Follow-up' : '📞 Due Today'}
-              </span>
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap;">
+              <span class="badge ${badgeClass}">${badgeText}</span>
+              ${client.uniqueId ? `<span class="badge badge-none" style="font-size: 0.72rem;">${client.uniqueId}</span>` : ''}
               <span style="font-size: 0.82rem; color: var(--text-muted);">Scheduled Date: <strong>${formatDate(item.nextFollowUpDate)}</strong></span>
             </div>
 
@@ -802,7 +881,7 @@ async function loadTodayFollowUpAgenda() {
               <span>📍 ${client.address || 'No Address'}</span>
               <span>🕒 Usual Gap: <strong>${client.usualOrderGap || 0} days</strong></span>
               <span>💰 Expected: <strong>${formatCurrency(item.orderExpectedAmount)}</strong></span>
-              <span>👤 CRE: <strong>${item.creName || 'CRE'}</strong></span>
+              <span>👤 Responsible: <strong>${item.creName || 'CRE'}</strong></span>
             </div>
 
             <div class="agenda-feedback-box">
@@ -813,20 +892,89 @@ async function loadTodayFollowUpAgenda() {
             </div>
           </div>
 
-          <div style="display: flex; flex-direction: column; gap: 8px; margin-left: 20px;">
-            <button class="btn btn-primary" style="padding: 8px 14px; font-size: 0.82rem;" onclick="quickFollowUpCall('${item.clientName}', '${item.contactNumber || client.contactNumber || ''}', '${item.clientId || ''}')">
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-left: 20px; align-self: center;">
+            <button class="btn btn-cre-action" style="padding: 8px 14px; font-size: 0.82rem;" onclick="quickFollowUpCall('${item.clientName}', '${item.contactNumber || client.contactNumber || ''}', '${item.clientId || ''}')">
               📞 Call Customer
             </button>
-            <button class="btn btn-secondary" style="padding: 8px 14px; font-size: 0.82rem; color: #10b981;" onclick="markFollowUpComplete('${item._id}')">
-              ✓ Mark Completed
-            </button>
+            ${!isCompleted ? `
+              <button class="btn btn-secondary" style="padding: 8px 14px; font-size: 0.82rem; color: #10b981;" onclick="markFollowUpComplete('${item._id}')">
+                ✓ Mark Completed
+              </button>
+            ` : `
+              <span style="font-size: 0.75rem; color: var(--accent-emerald); text-align: center; font-weight: 600;">✓ Done</span>
+            `}
           </div>
         </div>
       `;
     }).join('');
   } catch (err) {
-    container.innerHTML = `<div style="color: #f43f5e;">Error loading agenda: ${err.message}</div>`;
+    container.innerHTML = `<div style="color: #f43f5e; padding: 20px;">Error loading agenda: ${err.message}</div>`;
   }
+}
+
+// Wire up filter controls for Agenda
+function initAgendaControls() {
+  const selPerson = document.getElementById('agendaResponsiblePerson');
+  if (selPerson) {
+    selPerson.addEventListener('change', (e) => {
+      agendaFilterState.executive = e.target.value;
+      loadTodayFollowUpAgenda();
+    });
+  }
+
+  const searchInput = document.getElementById('agendaSearchInput');
+  if (searchInput) {
+    let searchTimer;
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        agendaFilterState.search = e.target.value;
+        loadTodayFollowUpAgenda();
+      }, 250);
+    });
+  }
+
+  const datePicker = document.getElementById('agendaDateFilter');
+  if (datePicker) {
+    datePicker.addEventListener('change', (e) => {
+      agendaFilterState.date = e.target.value;
+      agendaFilterState.filter = ''; // custom date overrides quick filter
+      document.querySelectorAll('.btn-quick-filter').forEach(b => b.classList.remove('active'));
+      loadTodayFollowUpAgenda();
+    });
+  }
+
+  // Quick filter buttons: Today, Tomorrow, Overdue, Show All Dates
+  const quickBtns = document.querySelectorAll('.btn-quick-filter');
+  quickBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      quickBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const f = btn.getAttribute('data-filter');
+      agendaFilterState.filter = f;
+      agendaFilterState.date = '';
+      if (datePicker) datePicker.value = '';
+      loadTodayFollowUpAgenda();
+    });
+  });
+
+  // Clicking on counter cards activates corresponding filter
+  const counterCards = document.querySelectorAll('.agenda-counter-card');
+  counterCards.forEach(card => {
+    card.addEventListener('click', () => {
+      const f = card.getAttribute('data-counter');
+      if (f) {
+        agendaFilterState.filter = f;
+        agendaFilterState.date = '';
+        if (datePicker) datePicker.value = '';
+        quickBtns.forEach(b => {
+          if (b.getAttribute('data-filter') === f) b.classList.add('active');
+          else b.classList.remove('active');
+        });
+        loadTodayFollowUpAgenda();
+      }
+    });
+  });
 }
 
 // 2. All Follow-ups Log History
@@ -1382,6 +1530,7 @@ function initSidebar() {
 window.addEventListener('DOMContentLoaded', () => {
   initTheme();
   initSidebar();
+  initAgendaControls();
   loadDashboard();
 });
 

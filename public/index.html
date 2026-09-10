@@ -99,9 +99,9 @@
   <main class="main-wrapper">
     <!-- Top Header -->
     <header class="top-header">
-      <div style="display: flex; align-items: center;">
-        <button class="sidebar-toggle-btn" id="btnSidebarToggle" title="Toggle / Auto-remove Sidebar">
-          ☰
+      <div class="top-header-left">
+        <button class="sidebar-toggle-btn" id="btnSidebarToggle" aria-label="Toggle Sidebar" title="Toggle Navigation Sidebar">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
         </button>
         <div class="page-title">
           <h1 id="pageHeading">SCOT Analytics Dashboard</h1>
@@ -110,32 +110,45 @@
       </div>
       <div class="header-actions">
         <!-- Day / Night Mode Toggle -->
-        <button class="theme-toggle-btn" id="btnThemeToggle" title="Toggle Day/Night Mode">
+        <button class="theme-toggle-btn" id="btnThemeToggle" title="Toggle Day / Night Mode" aria-label="Toggle Day / Night Theme">
           <span id="themeToggleIcon">☀️</span>
           <span id="themeToggleText">Day Mode</span>
         </button>
-        <button class="btn btn-secondary" id="btnRefresh">🔄 Refresh</button>
-        <button class="btn btn-primary" id="btnLogCRECall" style="background: linear-gradient(135deg, #10b981, #059669);">📞 Log CRE Call</button>
-        <button class="btn btn-primary" id="btnNewTransaction">+ Add Transaction</button>
-        <button class="btn btn-success" id="btnExportCurrent">📥 Export Excel</button>
+        <button class="btn btn-secondary" id="btnRefresh" title="Refresh Dashboard Data">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+          <span>Refresh</span>
+        </button>
+        <button class="btn btn-cre-action" id="btnLogCRECall" title="Log Customer Follow-up Call">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          <span>Log CRE Call</span>
+        </button>
+        <button class="btn btn-primary" id="btnNewTransaction" title="Record New Sales Transaction">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          <span>Add Transaction</span>
+        </button>
+        <button class="btn btn-excel-action" id="btnExportCurrent" title="Export Current Table to Excel">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          <span>Export Excel</span>
+        </button>
       </div>
     </header>
 
-    <!-- Month Filter Bar (Clean Modern Dropdown Only) -->
-    <div class="month-filter-bar-wrapper" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 24px; background: var(--bg-card); padding: 12px 20px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
-      <div style="display: flex; align-items: center; gap: 14px;">
-        <label for="monthSelectDropdown" style="font-size: 0.9rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 1.2rem;">📅</span> Select Financial Month:
+    <!-- Financial Month Toolbar (Modern Compact SaaS Filter Bar) -->
+    <div class="month-filter-toolbar">
+      <div class="month-toolbar-left">
+        <label for="monthSelectDropdown" class="month-label">
+          <span class="month-label-icon">📅</span>
+          <span>Select Financial Month:</span>
         </label>
-        <div class="custom-select-wrap" style="min-width: 260px;">
-          <select id="monthSelectDropdown" class="form-control" style="font-weight: 600; cursor: pointer; border-color: var(--accent-primary); box-shadow: 0 0 12px rgba(99,102,241,0.25); font-size: 0.92rem;">
+        <div class="custom-select-wrap">
+          <select id="monthSelectDropdown" class="form-control select-financial-month">
             <!-- Options populated dynamically -->
           </select>
         </div>
       </div>
-      <div style="display: flex; align-items: center; gap: 12px;">
+      <div class="month-toolbar-right">
         <span class="badge badge-active" id="currentMonthBadge">April 2026</span>
-        <span style="font-size: 0.8rem; color: var(--text-secondary);">FY 2026-27</span>
+        <span class="fy-tag">FY 2026-27</span>
       </div>
     </div>
 
@@ -232,21 +245,120 @@
 
     <!-- TAB: TODAY'S FOLLOW-UP AGENDA & CRE CALLS -->
     <section id="tab-cre-followups" class="tab-content">
+      <!-- CRM Executive & Date Filter Toolbar (Matching User Specification) -->
+      <div class="agenda-filter-card">
+        <!-- Row 1: Responsible Person & Client Search -->
+        <div class="agenda-filter-row">
+          <div class="agenda-filter-field flex-grow-dropdown">
+            <label for="agendaResponsiblePerson" class="filter-label">Responsible Person:</label>
+            <div class="custom-select-wrap">
+              <select id="agendaResponsiblePerson" class="form-control select-responsible-person">
+                <option value="all">— Select Responsible Person —</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="agenda-filter-field flex-grow-search">
+            <div class="search-input-wrap search-fullwidth">
+              <span class="search-icon">🔍</span>
+              <input type="text" class="search-input" id="agendaSearchInput" placeholder="Search by Client Name or Unique Id (e.g. Scot0044)...">
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2: Date Selector & Quick Filters -->
+        <div class="agenda-filter-row agenda-filter-row-secondary">
+          <div class="agenda-date-group">
+            <label for="agendaDateFilter" class="filter-label date-picker-label">
+              <span>📅</span>
+              <span>Select Date:</span>
+            </label>
+            <div class="date-input-wrap">
+              <input type="date" id="agendaDateFilter" class="form-control agenda-date-input">
+            </div>
+          </div>
+
+          <div class="agenda-quick-btns">
+            <button type="button" class="btn-quick-filter active" id="btnAgendaToday" data-filter="today">Today</button>
+            <button type="button" class="btn-quick-filter" id="btnAgendaTomorrow" data-filter="tomorrow">Tomorrow</button>
+            <button type="button" class="btn-quick-filter" id="btnAgendaOverdue" data-filter="overdue">Overdue</button>
+            <button type="button" class="btn-quick-filter" id="btnAgendaAllDates" data-filter="all">Show All Dates</button>
+          </div>
+        </div>
+
+        <!-- Row 3: Follow-Up Counter Metrics (6 Counter Cards) -->
+        <div class="agenda-counters-grid">
+          <!-- 1. PENDING -->
+          <div class="agenda-counter-card card-pending" data-counter="pending" title="View Pending Follow-ups">
+            <div class="counter-val" id="counterValPending">0</div>
+            <div class="counter-label">
+              <span class="counter-icon">⏳</span>
+              <span class="counter-text">PENDING</span>
+            </div>
+          </div>
+
+          <!-- 2. DUE TODAY -->
+          <div class="agenda-counter-card card-due-today" data-counter="today" title="View Calls Due Today">
+            <div class="counter-val" id="counterValDueToday">0</div>
+            <div class="counter-label">
+              <span class="counter-icon counter-dot-amber">●</span>
+              <span class="counter-text">DUE TODAY</span>
+            </div>
+          </div>
+
+          <!-- 3. DUE TOMORROW -->
+          <div class="agenda-counter-card card-due-tomorrow" data-counter="tomorrow" title="View Calls Due Tomorrow">
+            <div class="counter-val" id="counterValDueTomorrow">0</div>
+            <div class="counter-label">
+              <span class="counter-icon counter-dot-blue">●</span>
+              <span class="counter-text">DUE TOMORROW</span>
+            </div>
+          </div>
+
+          <!-- 4. OVERDUE -->
+          <div class="agenda-counter-card card-overdue" data-counter="overdue" title="View Overdue Follow-ups">
+            <div class="counter-val" id="counterValOverdue">0</div>
+            <div class="counter-label">
+              <span class="counter-icon counter-dot-rose">●</span>
+              <span class="counter-text">OVERDUE</span>
+            </div>
+          </div>
+
+          <!-- 5. COMPLETED -->
+          <div class="agenda-counter-card card-completed" data-counter="completed" title="View Completed Follow-ups">
+            <div class="counter-val" id="counterValCompleted">0</div>
+            <div class="counter-label">
+              <span class="counter-icon">✅</span>
+              <span class="counter-text">COMPLETED</span>
+            </div>
+          </div>
+
+          <!-- 6. TOTAL ASSIGNED -->
+          <div class="agenda-counter-card card-total" data-counter="all" title="View All Assigned Follow-ups">
+            <div class="counter-val" id="counterValTotalAssigned">0</div>
+            <div class="counter-label">
+              <span class="counter-icon">📁</span>
+              <span class="counter-text">TOTAL ASSIGNED</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="glass-panel">
         <div class="panel-header">
           <div>
-            <h3>🎯 Today's Follow-up Agenda (आज किसका Follow-up लेना है)</h3>
-            <p style="color: var(--text-secondary); font-size: 0.85rem;">Scheduled calls for today with full customer profile & previous feedback</p>
+            <h3>🎯 Follow-up Agenda (आज किसका Follow-up लेना है)</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;" id="agendaSubtitle">Scheduled calls with full customer profile, contact & previous feedback</p>
           </div>
           <div style="display: flex; gap: 12px;">
-            <button class="btn btn-primary" onclick="openCREModal()">+ Log New Call</button>
+            <button class="btn btn-cre-action" onclick="openCREModal()">+ Log New Call</button>
           </div>
         </div>
 
         <div id="todayAgendaList">
           <!-- Loaded dynamically -->
           <div style="text-align: center; padding: 40px; color: var(--text-muted);">
-            Loading today's follow-up agenda...
+            Loading follow-up agenda...
           </div>
         </div>
       </div>
@@ -349,12 +461,12 @@
           <table class="data-table" id="scotSheetTable">
             <thead>
               <tr>
-                <th>Client Name</th>
+                <th class="col-client">Client Name</th>
                 <th>Contact</th>
-                <th>Days Since</th>
+                <th class="col-numeric">Days Since</th>
                 <th>Last Order</th>
-                <th>Total Invoices</th>
-                <th>Total Sales</th>
+                <th class="col-numeric">Total Invoices</th>
+                <th class="col-numeric">Total Sales</th>
                 <th>Status</th>
                 <th>Planned Date</th>
                 <th>Actual Call Date</th>
