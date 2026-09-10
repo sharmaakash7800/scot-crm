@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SCOT | Client Order Tracking & Leaking Bucket Intelligence</title>
+  <meta name="description" content="Automated Client Order Tracking, Sales Follow-Up, and Leaking Bucket Loss Analytics with MongoDB">
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand-logo">
+      <div class="brand-icon">S</div>
+      <div class="brand-text">
+        <h2>SCOT Suite</h2>
+        <span>Sales & Analytics</span>
+      </div>
+    </div>
+
+    <ul class="nav-links">
+      <li>
+        <a class="nav-link active" data-tab="dashboard">
+          <span class="nav-icon">📊</span>
+          <span>Dashboard</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-link" data-tab="scot-monthly">
+          <span class="nav-icon">📅</span>
+          <span>Monthly SCOT</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-link" data-tab="monthly-loss">
+          <span class="nav-icon">📉</span>
+          <span>Loss & Leaking</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-link" data-tab="clients">
+          <span class="nav-icon">👥</span>
+          <span>Client Master</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-link" data-tab="transactions">
+          <span class="nav-icon">💳</span>
+          <span>Transactions</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-link" data-tab="enquiries">
+          <span class="nav-icon">📋</span>
+          <span>Enquiry Capture</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-link" data-tab="import-export">
+          <span class="nav-icon">🔄</span>
+          <span>Excel Sync & Git</span>
+        </a>
+      </li>
+    </ul>
+
+    <div class="db-status-badge">
+      <div class="status-dot"></div>
+      <div>
+        <strong id="dbStatusText">MongoDB Active</strong>
+        <p style="font-size: 0.7rem; color: var(--text-muted);">Synced Realtime</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content Area -->
+  <main class="main-wrapper">
+    <!-- Top Header -->
+    <header class="top-header">
+      <div class="page-title">
+        <h1 id="pageHeading">SCOT Analytics Dashboard</h1>
+        <p id="pageSubHeading">Automated FY 2026-27 Client Order & Lost Sales Intelligence</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" id="btnRefresh">🔄 Refresh</button>
+        <button class="btn btn-primary" id="btnNewTransaction">+ Add Transaction</button>
+        <button class="btn btn-success" id="btnExportCurrent">📥 Export Excel</button>
+      </div>
+    </header>
+
+    <!-- Month Filter Bar (Applicable to SCOT & Loss views) -->
+    <div class="month-filter-bar" id="monthFilterContainer">
+      <!-- Generated dynamically -->
+    </div>
+
+    <!-- TAB 1: DASHBOARD -->
+    <section id="tab-dashboard" class="tab-content active">
+      <!-- KPI Cards -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">Total Active Clients</span>
+            <span class="kpi-icon">👥</span>
+          </div>
+          <div class="kpi-value" id="kpiTotalClients">-</div>
+          <div class="kpi-subtext">Registered in Client Master</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">Total Sales (Till Date)</span>
+            <span class="kpi-icon">💰</span>
+          </div>
+          <div class="kpi-value" id="kpiTotalSales">₹0</div>
+          <div class="kpi-subtext">Cumulative Invoices Booked</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">Inactive (6+ Months)</span>
+            <span class="kpi-icon" style="color: var(--accent-rose);">⚠️</span>
+          </div>
+          <div class="kpi-value" id="kpiInactiveClients" style="color: #fb7185;">-</div>
+          <div class="kpi-subtext" id="kpiInactiveLostSale">Lost Sale: ₹0</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">Irregular Order Clients</span>
+            <span class="kpi-icon" style="color: var(--accent-amber);">⏳</span>
+          </div>
+          <div class="kpi-value" id="kpiIrregularClients" style="color: #fbbf24;">-</div>
+          <div class="kpi-subtext" id="kpiIrregularLostSale">Lost Sale: ₹0</div>
+        </div>
+      </div>
+
+      <!-- Charts Grid -->
+      <div class="charts-grid">
+        <div class="chart-card">
+          <div class="chart-header">
+            <h3>📈 Monthly Sales & Irregular Lost Sales (FY 26-27)</h3>
+          </div>
+          <div class="chart-canvas-container">
+            <canvas id="salesTrendChart"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-header">
+            <h3>🎯 Client Health Distribution</h3>
+          </div>
+          <div class="chart-canvas-container">
+            <canvas id="clientHealthChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview Summary of Selected Month -->
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div>
+            <h3>Selected Month Follow-Up Priority List</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">Clients requiring urgent follow-up for this period</p>
+          </div>
+          <button class="btn btn-secondary" onclick="switchTab('scot-monthly')">View Full SCOT Sheet →</button>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table" id="dashboardPriorityTable">
+            <thead>
+              <tr>
+                <th>Client Name</th>
+                <th>Contact</th>
+                <th>Days Since Last Order</th>
+                <th>Last Order Date</th>
+                <th>Last Amount</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="6" style="text-align: center;">Loading data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: MONTHLY SCOT SHEET -->
+    <section id="tab-scot-monthly" class="tab-content">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div>
+            <h3 id="scotSheetTitle">Monthly SCOT Automated Sheet</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;" id="scotSheetSubtitle">Real-time dynamic calculations matching Excel formulas</p>
+          </div>
+          <div class="search-input-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="search-input" id="scotSearch" placeholder="Search client name or contact...">
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table" id="scotSheetTable">
+            <thead>
+              <tr>
+                <th>Client Name</th>
+                <th>Contact Number</th>
+                <th>First Order</th>
+                <th>Last Order</th>
+                <th>Days Since</th>
+                <th>Last Invoice</th>
+                <th>Last Amount</th>
+                <th>Total Invoices</th>
+                <th>Total Sales</th>
+                <th>Status</th>
+                <th>Avg Size</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Dynamic Rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: MONTHLY LOSS & LEAKING BUCKET -->
+    <section id="tab-monthly-loss" class="tab-content">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div>
+            <h3>Full Year Monthly Loss & Leaking Bucket Matrix (FY 2026-27)</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">Enquiry drop-off rates and client attrition analytics</p>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table" id="lossMatrixTable">
+            <thead>
+              <tr>
+                <th>Metric / Indicator</th>
+                <th>Apr'26</th>
+                <th>May'26</th>
+                <th>Jun'26</th>
+                <th>Jul'26</th>
+                <th>Aug'26</th>
+                <th>Sep'26</th>
+                <th>Oct'26</th>
+                <th>Nov'26</th>
+                <th>Dec'26</th>
+                <th>Jan'27</th>
+                <th>Feb'27</th>
+                <th>Mar'27</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Matrix rows generated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: CLIENT MASTER -->
+    <section id="tab-clients" class="tab-content">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div>
+            <h3>Client Master Database</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">Stored persistently in MongoDB</p>
+          </div>
+          <div style="display: flex; gap: 12px;">
+            <div class="search-input-wrap">
+              <span class="search-icon">🔍</span>
+              <input type="text" class="search-input" id="clientMasterSearch" placeholder="Search clients...">
+            </div>
+            <button class="btn btn-primary" id="btnNewClient">+ Add Client</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table" id="clientMasterTable">
+            <thead>
+              <tr>
+                <th>Unique ID</th>
+                <th>Client Name</th>
+                <th>Contact</th>
+                <th>Address</th>
+                <th>Usual Order Gap</th>
+                <th>First Order Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Dynamic Rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: TRANSACTIONS -->
+    <section id="tab-transactions" class="tab-content">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div>
+            <h3>Transaction Log</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">Historical sales and invoice ledger</p>
+          </div>
+          <div style="display: flex; gap: 12px;">
+            <div class="search-input-wrap">
+              <span class="search-icon">🔍</span>
+              <input type="text" class="search-input" id="transactionSearch" placeholder="Search by client or invoice...">
+            </div>
+            <button class="btn btn-primary" onclick="openTxModal()">+ Log Sale</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table" id="transactionTable">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Client Name</th>
+                <th>Invoice No</th>
+                <th>Amount (₹)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Dynamic Rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 6: ENQUIRY CAPTURE SHEET -->
+    <section id="tab-enquiries" class="tab-content">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div>
+            <h3>Enquiry Capture & Follow-up Sheet</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">Track orders received vs orders without follow-up</p>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table" id="enquiryTable">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th>Total Orders / Enquiries</th>
+                <th>Orders NOT Followed Up</th>
+                <th>Total Value of Those Orders (₹)</th>
+                <th>% Not Followed Up</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Dynamic Rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 7: EXCEL IMPORT & GIT SETUP -->
+    <section id="tab-import-export" class="tab-content">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div>
+            <h3>Excel Sync & Git Configuration</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">Import your existing Excel file or prepare for GitHub upload</p>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+          <!-- Dropzone -->
+          <div>
+            <h4 style="margin-bottom: 12px;">Import Excel (.xlsx)</h4>
+            <div class="dropzone" id="dropzoneBox">
+              <div class="dropzone-icon">📁</div>
+              <h3>Drop Monthly_Scot_Automated_FY26-27.xlsx here</h3>
+              <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 6px;">or click to browse from your computer</p>
+              <input type="file" id="excelFileInput" accept=".xlsx, .xls" style="display: none;">
+            </div>
+            <div style="margin-top: 14px;">
+              <button class="btn btn-primary" id="btnTriggerDefaultImport" style="width: 100%;">
+                ⚡ Re-import Default Workspace Excel File
+              </button>
+            </div>
+            <div id="importStatus" style="margin-top: 12px; font-size: 0.88rem;"></div>
+          </div>
+
+          <!-- Git Instructions -->
+          <div style="background: rgba(0,0,0,0.25); padding: 20px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+            <h4 style="margin-bottom: 12px; color: var(--accent-cyan);">🚀 How to Upload to GitHub</h4>
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px;">
+              A clean <code>.gitignore</code> and <code>README.md</code> are already set up. Open terminal and run:
+            </p>
+            <pre style="background: #060911; padding: 14px; border-radius: 8px; font-size: 0.82rem; color: #a5b4fc; overflow-x: auto; line-height: 1.6;">
+git init
+git add .
+git commit -m "Initial commit: SCOT Sales Tracking Web App with MongoDB"
+git branch -M main
+git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+git push -u origin main</pre>
+            <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 10px;">
+              * Note: MongoDB Atlas credentials can be placed in <code>.env</code> which is safely gitignored!
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Modal: Add / Edit Transaction -->
+  <div class="modal-overlay" id="txModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="txModalTitle">Log New Transaction</h3>
+        <button class="close-btn" onclick="closeTxModal()">&times;</button>
+      </div>
+      <form id="txForm">
+        <div class="form-group">
+          <label class="form-label">Client Name *</label>
+          <input type="text" class="form-control" id="txClientName" required placeholder="e.g. RAWAT ELECTRICALS">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Invoice Date *</label>
+          <input type="date" class="form-control" id="txDate" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Invoice Number</label>
+          <input type="text" class="form-control" id="txInvoiceNo" placeholder="e.g. INV-2026-001">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Amount (₹) *</label>
+          <input type="number" step="any" class="form-control" id="txAmount" required placeholder="0.00">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+          <button type="button" class="btn btn-secondary" onclick="closeTxModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Transaction</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add / Edit Client -->
+  <div class="modal-overlay" id="clientModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="clientModalTitle">Add Client</h3>
+        <button class="close-btn" onclick="closeClientModal()">&times;</button>
+      </div>
+      <form id="clientForm">
+        <input type="hidden" id="clientEditId">
+        <div class="form-group">
+          <label class="form-label">Client Name *</label>
+          <input type="text" class="form-control" id="clientName" required placeholder="e.g. Ankit Electricals">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contact Number</label>
+          <input type="text" class="form-control" id="clientContact" placeholder="e.g. 9829461116">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Address / Details</label>
+          <textarea class="form-control" id="clientAddress" rows="2" placeholder="Full address"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Usual Order Gap (Days)</label>
+          <input type="number" class="form-control" id="clientUsualGap" placeholder="e.g. 30">
+        </div>
+        <div class="form-group">
+          <label class="form-label">First Order Date</label>
+          <input type="date" class="form-control" id="clientFirstOrderDate">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+          <button type="button" class="btn btn-secondary" onclick="closeClientModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Client</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Edit Enquiry Entry -->
+  <div class="modal-overlay" id="enquiryModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Edit Enquiry Data</h3>
+        <button class="close-btn" onclick="closeEnquiryModal()">&times;</button>
+      </div>
+      <form id="enquiryForm">
+        <input type="hidden" id="enqMonthKey">
+        <input type="hidden" id="enqMonthIndex">
+        <div class="form-group">
+          <label class="form-label">Month</label>
+          <input type="text" class="form-control" id="enqMonthName" readonly>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Total Orders / Enquiries</label>
+          <input type="number" class="form-control" id="enqTotalOrders" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Orders that did NOT get Follow-up</label>
+          <input type="number" class="form-control" id="enqNotFollowed" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Total Value of Those Orders (₹)</label>
+          <input type="number" class="form-control" id="enqTotalValue" required>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+          <button type="button" class="btn btn-secondary" onclick="closeEnquiryModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Update Enquiry</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Application Logic -->
+  <script src="app.js"></script>
+</body>
+</html>
