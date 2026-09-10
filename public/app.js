@@ -1878,6 +1878,38 @@ document.getElementById('btnRefresh')?.addEventListener('click', () => {
 document.getElementById('btnNewTransaction')?.addEventListener('click', openTxModal);
 document.getElementById('btnNewClient')?.addEventListener('click', () => openClientModal());
 
+// Tab navigation listeners
+document.querySelectorAll('.nav-link').forEach(link => {
+  link.addEventListener('click', () => {
+    const tab = link.getAttribute('data-tab');
+    switchTab(tab);
+  });
+});
+
+// ==================== SIDEBAR AUTO-REMOVE & TOGGLE ==================== //
+function initSidebar() {
+  const toggleBtn = document.getElementById('btnSidebarToggle');
+  const backdrop = document.getElementById('sidebarBackdrop');
+
+  // Toggle button click
+  toggleBtn?.addEventListener('click', () => {
+    document.body.classList.toggle('sidebar-collapsed');
+    localStorage.setItem('scot_sidebar_collapsed', document.body.classList.contains('sidebar-collapsed'));
+  });
+
+  // Auto-remove when clicking outside / on backdrop
+  backdrop?.addEventListener('click', () => {
+    document.body.classList.add('sidebar-collapsed');
+    localStorage.setItem('scot_sidebar_collapsed', true);
+  });
+
+  // Check saved state or auto-remove on smaller laptop/tablet screens
+  const savedState = localStorage.getItem('scot_sidebar_collapsed');
+  if (savedState === 'true' || window.innerWidth < 1100) {
+    document.body.classList.add('sidebar-collapsed');
+  }
+}
+
 // ==================== TOAST NOTIFICATION UTILITY ==================== //
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
