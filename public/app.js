@@ -46,6 +46,8 @@ function switchTab(tabId) {
 
   // Load specific tab data
   if (tabId === 'dashboard') loadDashboard();
+  if (tabId === 'cre-followups') loadCREFollowUps();
+  if (tabId === 'calendar-view') loadFollowUpCalendar();
   if (tabId === 'scot-monthly') loadScotMonthly();
   if (tabId === 'monthly-loss') loadMonthlyLossMatrix();
   if (tabId === 'clients') loadClientMaster();
@@ -640,6 +642,409 @@ document.getElementById('btnTriggerDefaultImport')?.addEventListener('click', as
 });
 
 // Export Current Sheet
+// ==================== DAY / NIGHT MODE (THEME TOGGLE) ==================== //
+function initTheme() {
+  const savedTheme = localStorage.getItem('scot_theme') || 'dark';
+  setTheme(savedTheme);
+
+  document.getElementById('btnThemeToggle')?.addEventListener('click', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+  });
+}
+
+function setTheme(theme) {
+  if (theme === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.getElementById('themeToggleIcon').innerText = '🌙';
+    document.getElementById('themeToggleText').innerText = 'Night Mode';
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+    document.getElementById('themeToggleIcon').innerText = '☀️';
+    document.getElementById('themeToggleText').innerText = 'Day Mode';
+  }
+  localStorage.setItem('scot_theme', theme);
+}
+
+// ==================== CRE CALL & FOLLOW-UP CRM ==================== //
+let allFollowupsList = [];
+
+async function loadCREFollowUps() {
+  await Promise.all([
+    loadTodayFollowUpAgenda(),
+    loadAllFollowupsHistory()
+  ]);
+}
+
+// 1. Today's Agenda (आज किसका Follow-up लेना है)
+async function loadTodayFollowUpAgenda() {
+  const container = document.getElementById('todayAgendaList');
+  if (!container) return;
+
+  try {
+    const res = await fetch('/api/followups/today');
+    const data = await res.json();
+    const list = data.followups || [];
+
+    if (list.length === 0) {
+      container.innerHTML = `
+        <div style="text-align: center; padding: 40px; background: rgba(255,255,255,0.02); border-radius: var(--radius-md); border: 1px dashed var(--border-color);">
+          <div style="font-size: 2.2rem; margin-bottom: 8px;">🎉</div>
+          <h4 style="color: var(--text-primary);">All Follow-ups for Today are Done!</h4>
+          <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">Aaj koi pending follow-up scheduled nahi hai. Click "+ Log New Call" to schedule customer follow-ups.</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = list.map(item => {
+      const client = item.clientDetails || {};
+      const isOverdue = new Date(item.nextFollowUpDate).setHours(0,0,0,0) < new Date().setHours(0,0,0,0);
+
+      return `
+        <div class="agenda-card" style="border-left: 4px solid ${isOverdue ? '#f43f5e' : '#10b981'};">
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+              <span class="badge ${isOverdue ? 'badge-inactive' : 'badge-active'}">
+                ${isOverdue ? '⚠️ Overdue Follow-up' : '📞 Due Today'}
+              </span>
+              <span style="font-size: 0.82rem; color: var(--text-muted);">Scheduled Date: <strong>${formatDate(item.nextFollowUpDate)}</strong></span>
+            </div>
+
+            <div class="agenda-info">
+              <h4>${item.clientName}</h4>
+            </div>
+
+            <div class="agenda-meta">
+              <span>📱 <strong>${client.contactNumber || item.contactNumber || 'No Contact'}</strong></span>
+              <span>📍 ${client.address || 'No Address'}</span>
+              <span>🕒 Usual Gap: <strong>${client.usualOrderGap || 0} days</strong></span>
+              <span>💰 Expected: <strong>${formatCurrency(item.orderExpectedAmount)}</strong></span>
+              <span>👤 CRE: <strong>${item.creName || 'CRE'}</strong></span>
+            </div>
+
+            <div class="agenda-feedback-box">
+              <strong>Previous Feedback:</strong> "${item.customerFeedback || 'No feedback logged'}" 
+              <span style="margin-left: 10px; font-weight: 600; color: ${item.sentiment === 'Positive' ? '#10b981' : (item.sentiment === 'Negative' ? '#f43f5e' : '#f59e0b')}">
+                (${item.sentiment || 'Neutral'})
+              </span>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-left: 20px;">
+            <button class="btn btn-primary" style="padding: 8px 14px; font-size: 0.82rem;" onclick="quickFollowUpCall('${item.clientName}', '${item.contactNumber || client.contactNumber || ''}', '${item.clientId || ''}')">
+              📞 Call Customer
+            </button>
+            <button class="btn btn-secondary" style="padding: 8px 14px; font-size: 0.82rem; color: #10b981;" onclick="markFollowUpComplete('${item._id}')">
+              ✓ Mark Completed
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    container.innerHTML = `<div style="color: #f43f5e;">Error loading agenda: ${err.message}</div>`;
+  }
+}
+
+// 2. All Follow-ups Log History
+async function loadAllFollowupsHistory() {
+  try {
+    const res = await fetch('/api/followups');
+    const data = await res.json();
+    allFollowupsList = data.followups || [];
+    renderFollowupsTable(allFollowupsList);
+  } catch (err) {
+    console.error('Error loading follow-ups history:', err);
+  }
+}
+
+function renderFollowupsTable(list) {
+  const tbody = document.querySelector('#allFollowupsTable tbody');
+  if (!tbody) return;
+
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No call follow-ups recorded yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.map(f => `
+    <tr>
+      <td>${formatDate(f.callDate)}</td>
+      <td><strong>${f.clientName}</strong></td>
+      <td>${f.contactNumber || '-'}</td>
+      <td><span class="badge ${f.callStatus === 'Connected' || f.callStatus === 'Order Promised' ? 'badge-active' : 'badge-slow'}">${f.callStatus}</span></td>
+      <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis;" title="${f.customerFeedback}">${f.customerFeedback}</td>
+      <td><strong style="color: var(--accent-cyan);">${formatDate(f.nextFollowUpDate)}</strong></td>
+      <td>${formatCurrency(f.orderExpectedAmount)}</td>
+      <td>${f.creName || '-'}</td>
+      <td>
+        <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem; color: #f43f5e;" onclick="deleteFollowUp('${f._id}')">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+document.getElementById('followUpSearch')?.addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase().trim();
+  const filtered = allFollowupsList.filter(f => 
+    f.clientName.toLowerCase().includes(q) || 
+    (f.contactNumber && f.contactNumber.includes(q)) ||
+    (f.creName && f.creName.toLowerCase().includes(q)) ||
+    (f.customerFeedback && f.customerFeedback.toLowerCase().includes(q))
+  );
+  renderFollowupsTable(filtered);
+});
+
+async function markFollowUpComplete(id) {
+  try {
+    await fetch(`/api/followups/${id}/complete`, { method: 'PATCH' });
+    loadTodayFollowUpAgenda();
+    loadAllFollowupsHistory();
+  } catch (err) {
+    alert('Error marking complete: ' + err.message);
+  }
+}
+
+async function deleteFollowUp(id) {
+  if (!confirm('Are you sure you want to delete this follow-up record?')) return;
+  try {
+    await fetch(`/api/followups/${id}`, { method: 'DELETE' });
+    loadTodayFollowUpAgenda();
+    loadAllFollowupsHistory();
+  } catch (err) {
+    alert('Error deleting follow-up: ' + err.message);
+  }
+}
+
+// Quick trigger from Agenda or Client Master
+function quickFollowUpCall(clientName, contactNumber, clientId) {
+  openCREModal({
+    clientName,
+    contactNumber,
+    clientId
+  });
+}
+
+// ==================== INTERACTIVE CALENDAR ==================== //
+let calCurrentYear = new Date().getFullYear();
+let calCurrentMonth = new Date().getMonth();
+let calEvents = [];
+
+async function loadFollowUpCalendar() {
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  document.getElementById('calendarMonthTitle').innerText = `Follow-up Calendar: ${monthNames[calCurrentMonth]} ${calCurrentYear}`;
+
+  try {
+    const res = await fetch(`/api/followups/calendar?month=${calCurrentMonth}&year=${calCurrentYear}`);
+    const data = await res.json();
+    calEvents = data.events || [];
+    renderCalendarGrid();
+  } catch (err) {
+    console.error('Error loading calendar:', err);
+  }
+}
+
+function renderCalendarGrid() {
+  const container = document.getElementById('calendarCellsContainer');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const firstDay = new Date(calCurrentYear, calCurrentMonth, 1).getDay();
+  const daysInMonth = new Date(calCurrentYear, calCurrentMonth + 1, 0).getDate();
+  const prevMonthDays = new Date(calCurrentYear, calCurrentMonth, 0).getDate();
+
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Prev month padding cells
+  for (let i = firstDay - 1; i >= 0; i--) {
+    const d = prevMonthDays - i;
+    const cell = document.createElement('div');
+    cell.className = 'calendar-cell other-month';
+    cell.innerHTML = `<span class="calendar-cell-date">${d}</span>`;
+    container.appendChild(cell);
+  }
+
+  // Current month cells
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${calCurrentYear}-${String(calCurrentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const cell = document.createElement('div');
+    cell.className = 'calendar-cell';
+    if (dateStr === todayStr) {
+      cell.classList.add('today');
+    }
+
+    // Filter events on this date
+    const dayCalls = calEvents.filter(e => e.callDate && e.callDate.startsWith(dateStr));
+    const dayFollowups = calEvents.filter(e => e.nextFollowUpDate && e.nextFollowUpDate.startsWith(dateStr));
+
+    let eventsHTML = '';
+    dayFollowups.slice(0, 2).forEach(f => {
+      eventsHTML += `<div class="calendar-badge-event badge-followup-due" title="Follow-up due: ${f.clientName}">⏰ ${f.clientName}</div>`;
+    });
+    dayCalls.slice(0, 2).forEach(c => {
+      eventsHTML += `<div class="calendar-badge-event badge-call-logged" title="Called: ${c.clientName}">📞 ${c.clientName}</div>`;
+    });
+
+    const totalMore = (dayFollowups.length + dayCalls.length) - 4;
+    if (totalMore > 0) {
+      eventsHTML += `<div style="font-size: 0.65rem; color: var(--accent-cyan); font-weight: 600;">+${totalMore} more</div>`;
+    }
+
+    cell.innerHTML = `
+      <span class="calendar-cell-date">${d}</span>
+      <div style="display: flex; flex-direction: column; flex: 1;">
+        ${eventsHTML}
+      </div>
+    `;
+
+    cell.onclick = () => selectCalendarDate(dateStr, dayFollowups, dayCalls);
+    container.appendChild(cell);
+  }
+}
+
+function selectCalendarDate(dateStr, followups, calls) {
+  const panel = document.getElementById('calendarSelectedDatePanel');
+  const heading = document.getElementById('calendarSelectedDateHeading');
+  const sub = document.getElementById('calendarSelectedDateSub');
+  const list = document.getElementById('calendarSelectedEventsList');
+
+  panel.style.display = 'block';
+  heading.innerText = `Activities on: ${dateStr}`;
+  sub.innerText = `${followups.length} Follow-ups scheduled, ${calls.length} Calls logged`;
+
+  document.getElementById('btnScheduleOnSelectedDate').onclick = () => {
+    openCREModal({ nextFollowUpDate: dateStr });
+  };
+
+  if (followups.length === 0 && calls.length === 0) {
+    list.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem; padding: 12px 0;">No activities recorded on this date.</p>`;
+    return;
+  }
+
+  let html = '';
+  if (followups.length > 0) {
+    html += `<h5 style="color: #fbbf24; margin: 10px 0 6px;">⏰ Follow-ups Due (${followups.length})</h5>`;
+    followups.forEach(f => {
+      html += `
+        <div class="feedback-history-item">
+          <div style="display: flex; justify-content: space-between;">
+            <strong>${f.clientName}</strong>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">${f.contactNumber || '-'}</span>
+          </div>
+          <p style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 4px;">Feedback: "${f.customerFeedback}"</p>
+        </div>
+      `;
+    });
+  }
+
+  if (calls.length > 0) {
+    html += `<h5 style="color: #10b981; margin: 14px 0 6px;">📞 Calls Logged (${calls.length})</h5>`;
+    calls.forEach(c => {
+      html += `
+        <div class="feedback-history-item">
+          <div style="display: flex; justify-content: space-between;">
+            <strong>${c.clientName} (${c.callStatus})</strong>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">CRE: ${c.creName || '-'}</span>
+          </div>
+          <p style="font-size: 0.82rem; color: var(--text-secondary); margin-top: 4px;">Feedback: "${c.customerFeedback}"</p>
+        </div>
+      `;
+    });
+  }
+
+  list.innerHTML = html;
+}
+
+// Calendar Navigation
+document.getElementById('btnCalPrev')?.addEventListener('click', () => {
+  calCurrentMonth--;
+  if (calCurrentMonth < 0) {
+    calCurrentMonth = 11;
+    calCurrentYear--;
+  }
+  loadFollowUpCalendar();
+});
+
+document.getElementById('btnCalNext')?.addEventListener('click', () => {
+  calCurrentMonth++;
+  if (calCurrentMonth > 11) {
+    calCurrentMonth = 0;
+    calCurrentYear++;
+  }
+  loadFollowUpCalendar();
+});
+
+document.getElementById('btnCalToday')?.addEventListener('click', () => {
+  calCurrentYear = new Date().getFullYear();
+  calCurrentMonth = new Date().getMonth();
+  loadFollowUpCalendar();
+});
+
+// ==================== CRE MODAL HANDLERS ==================== //
+function openCREModal(preset = {}) {
+  document.getElementById('creClientId').value = preset.clientId || '';
+  document.getElementById('creClientName').value = preset.clientName || '';
+  document.getElementById('creContactNumber').value = preset.contactNumber || '';
+  document.getElementById('creCallDate').value = preset.callDate || new Date().toISOString().split('T')[0];
+  document.getElementById('creNextFollowUpDate').value = preset.nextFollowUpDate || '';
+  document.getElementById('creFeedback').value = '';
+  document.getElementById('creExpectedAmount').value = '';
+  document.getElementById('creModal').classList.add('active');
+}
+
+function closeCREModal() {
+  document.getElementById('creModal').classList.remove('active');
+  document.getElementById('creForm').reset();
+}
+
+document.getElementById('creForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    clientId: document.getElementById('creClientId').value || null,
+    clientName: document.getElementById('creClientName').value,
+    contactNumber: document.getElementById('creContactNumber').value,
+    callDate: document.getElementById('creCallDate').value,
+    callStatus: document.getElementById('creCallStatus').value,
+    customerFeedback: document.getElementById('creFeedback').value,
+    nextFollowUpDate: document.getElementById('creNextFollowUpDate').value,
+    orderExpectedAmount: parseFloat(document.getElementById('creExpectedAmount').value) || 0,
+    sentiment: document.getElementById('creSentiment').value,
+    creName: document.getElementById('creExecutiveName').value || 'CRE Executive'
+  };
+
+  try {
+    const res = await fetch('/api/followups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.success) {
+      closeCREModal();
+      loadTodayFollowUpAgenda();
+      loadAllFollowupsHistory();
+      if (document.getElementById('tab-calendar-view').classList.contains('active')) {
+        loadFollowUpCalendar();
+      }
+      alert('✅ CRE Call & Next Follow-up logged and saved to MongoDB & Calendar!');
+    } else {
+      alert('Error: ' + data.error);
+    }
+  } catch (err) {
+    alert('Error saving follow-up: ' + err.message);
+  }
+});
+
+// Attach top header button
+document.getElementById('btnLogCRECall')?.addEventListener('click', () => openCREModal());
+
+// Export Current Sheet
 document.getElementById('btnExportCurrent')?.addEventListener('click', () => {
   window.open(`/api/export/scot/${encodeURIComponent(currentMonthKey)}`, '_blank');
 });
@@ -647,6 +1052,7 @@ document.getElementById('btnExportCurrent')?.addEventListener('click', () => {
 // Setup Top Header buttons
 document.getElementById('btnRefresh')?.addEventListener('click', () => {
   loadDashboard();
+  loadTodayFollowUpAgenda();
 });
 document.getElementById('btnNewTransaction')?.addEventListener('click', openTxModal);
 document.getElementById('btnNewClient')?.addEventListener('click', () => openClientModal());
@@ -661,5 +1067,7 @@ document.querySelectorAll('.nav-link').forEach(link => {
 
 // Initialize on page load
 window.addEventListener('DOMContentLoaded', () => {
+  initTheme();
   loadDashboard();
 });
+

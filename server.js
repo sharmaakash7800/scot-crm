@@ -10,6 +10,7 @@ const connectDB = require('./db');
 const Client = require('./models/Client');
 const Transaction = require('./models/Transaction');
 const Enquiry = require('./models/Enquiry');
+const FollowUp = require('./models/FollowUp');
 const { importExcelData, cleanNumber, parseDate } = require('./import_excel');
 
 const app = express();
@@ -331,6 +332,194 @@ app.post('/api/enquiries', async (req, res) => {
       { upsert: true, new: true }
     );
     res.json({ success: true, enquiry });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4.1 Follow-Up & CRE CRM API Routes
+// Get followups (can filter by date, today, clientId, month/year)
+app.get('/api/followups', async (req, res) => {
+  try {
+    const { date, clientId, month, year, today } = req.query;
+    let query = {};
+
+    if (clientId) {
+      query.clientId = clientId;
+    }
+
+    if (today === 'true') {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+
+      // Follow-up scheduled for today OR call taken today
+      query.$or = [
+        { nextFollowUpDate: { $gte: startOfDay, $lte: endOfDay } },
+        { callDate: { $gte: startOfDay, $lte: endOfDay } }
+      ];
+    } else if (date) {
+      const start = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(date);
+      end.setHours(23, 59, 59, 999);
+      query.$or = [
+        { nextFollowUpDate: { $gte: start, $lte: end } },
+        { callDate: { $gte: start, $lte: end } }
+      ];
+    } else if (month && year) {
+      const m = parseInt(month, 10);
+      const y = parseInt(year, 10);
+      const start = new Date(y, m, 1);
+      const end = new Date(y, m + 1, 0, 23, 59, 59, 999);
+      query.$or = [
+        { nextFollowUpDate: { $gte: start, $lte: end } },
+        { callDate: { $gte: start, $lte: end } }
+      ];
+    }
+
+    const followups = await FollowUp.find(query).sort({ nextFollowUpDate: 1, callDate: -1 });
+    res.json({ success: true, count: followups.length, followups });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Today's Follow-up agenda with complete client details
+app.get('/api/followups/today', async (req, res) => {
+  try {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // Find followups scheduled for today or overdue pending followups
+    const scheduled = await FollowUp.find({
+      nextFollowUpDate: { $lte: endOfDay },
+      isCompleted: { $ne: true }
+    }).sort({ nextFollowUpDate: 1 }).lean();
+
+    // Populate client details
+    const populated = await Promise.all(
+      scheduled.map(async (f) => {
+        let client = null;
+        if (f.clientId) {
+          client = await Client.findById(f.clientId).lean();
+        }
+        if (!client && f.clientName) {
+          client = await Client.findOne({ clientName: f.clientName }).lean();
+        }
+        return {
+          ...f,
+          clientDetails: client || {
+            clientName: f.clientName,
+            contactNumber: f.contactNumber,
+            address: '-',
+            usualOrderGap: 0
+          }
+        };
+      })
+    );
+
+    res.json({ success: true, count: populated.length, followups: populated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Calendar events API (returns call logs & scheduled follow-ups grouped by date)
+app.get('/api/followups/calendar', async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    const now = new Date();
+    const m = month !== undefined ? parseInt(month, 10) : now.getMonth();
+    const y = year !== undefined ? parseInt(year, 10) : now.getFullYear();
+
+    const start = new Date(y, m, 1, 0, 0, 0);
+    const end = new Date(y, m + 1, 0, 23, 59, 59);
+
+    const events = await FollowUp.find({
+      $or: [
+        { callDate: { $gte: start, $lte: end } },
+        { nextFollowUpDate: { $gte: start, $lte: end } }
+      ]
+    }).lean();
+
+    res.json({ success: true, month: m, year: y, events });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Create new CRE call entry
+app.post('/api/followups', async (req, res) => {
+  try {
+    const {
+      clientId,
+      clientName,
+      contactNumber,
+      callDate,
+      creName,
+      callStatus,
+      customerFeedback,
+      nextFollowUpDate,
+      orderExpectedAmount,
+      sentiment
+    } = req.body;
+
+    if (!clientName || !customerFeedback) {
+      return res.status(400).json({ success: false, error: 'Client Name and Customer Feedback are required' });
+    }
+
+    let clientDoc = null;
+    if (clientId) {
+      clientDoc = await Client.findById(clientId);
+    }
+    if (!clientDoc && clientName) {
+      clientDoc = await Client.findOne({ clientName: clientName.trim() });
+    }
+
+    const followUp = new FollowUp({
+      clientId: clientDoc ? clientDoc._id : null,
+      clientName: clientDoc ? clientDoc.clientName : clientName.trim(),
+      contactNumber: contactNumber || (clientDoc ? clientDoc.contactNumber : ''),
+      callDate: callDate ? new Date(callDate) : new Date(),
+      creName: (creName || 'CRE Executive').trim(),
+      callStatus: callStatus || 'Connected',
+      customerFeedback: customerFeedback.trim(),
+      nextFollowUpDate: nextFollowUpDate ? new Date(nextFollowUpDate) : null,
+      orderExpectedAmount: Number(orderExpectedAmount) || 0,
+      sentiment: sentiment || 'Positive',
+      isCompleted: false
+    });
+
+    await followUp.save();
+    res.json({ success: true, followUp });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Mark follow-up as completed
+app.patch('/api/followups/:id/complete', async (req, res) => {
+  try {
+    const followUp = await FollowUp.findByIdAndUpdate(
+      req.params.id,
+      { isCompleted: true },
+      { new: true }
+    );
+    res.json({ success: true, followUp });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete follow-up
+app.delete('/api/followups/:id', async (req, res) => {
+  try {
+    await FollowUp.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Follow-up deleted' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

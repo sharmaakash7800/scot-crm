@@ -34,6 +34,18 @@
         </a>
       </li>
       <li>
+        <a class="nav-link" data-tab="cre-followups">
+          <span class="nav-icon">📞</span>
+          <span>CRE Follow-ups</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-link" data-tab="calendar-view">
+          <span class="nav-icon">🗓️</span>
+          <span>Follow-up Calendar</span>
+        </a>
+      </li>
+      <li>
         <a class="nav-link" data-tab="scot-monthly">
           <span class="nav-icon">📅</span>
           <span>Monthly SCOT</span>
@@ -89,7 +101,13 @@
         <p id="pageSubHeading">Automated FY 2026-27 Client Order & Lost Sales Intelligence</p>
       </div>
       <div class="header-actions">
+        <!-- Day / Night Mode Toggle -->
+        <button class="theme-toggle-btn" id="btnThemeToggle" title="Toggle Day/Night Mode">
+          <span id="themeToggleIcon">☀️</span>
+          <span id="themeToggleText">Day Mode</span>
+        </button>
         <button class="btn btn-secondary" id="btnRefresh">🔄 Refresh</button>
+        <button class="btn btn-primary" id="btnLogCRECall" style="background: linear-gradient(135deg, #10b981, #059669);">📞 Log CRE Call</button>
         <button class="btn btn-primary" id="btnNewTransaction">+ Add Transaction</button>
         <button class="btn btn-success" id="btnExportCurrent">📥 Export Excel</button>
       </div>
@@ -188,6 +206,107 @@
             </tbody>
           </table>
         </div>
+      </div>
+    </section>
+
+    <!-- TAB: TODAY'S FOLLOW-UP AGENDA & CRE CALLS -->
+    <section id="tab-cre-followups" class="tab-content">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div>
+            <h3>🎯 Today's Follow-up Agenda (आज किसका Follow-up लेना है)</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">Scheduled calls for today with full customer profile & previous feedback</p>
+          </div>
+          <div style="display: flex; gap: 12px;">
+            <button class="btn btn-primary" onclick="openCREModal()">+ Log New Call</button>
+          </div>
+        </div>
+
+        <div id="todayAgendaList">
+          <!-- Loaded dynamically -->
+          <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+            Loading today's follow-up agenda...
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Customer Feedback & Call Log History -->
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div>
+            <h3>📝 Customer Feedback & Interaction History (Customer ka Feed-back)</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">Chronological log of all CRE calls, feedback, sentiments, and promised orders</p>
+          </div>
+          <div class="search-input-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" class="search-input" id="followUpSearch" placeholder="Search by customer or CRE...">
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table" id="allFollowupsTable">
+            <thead>
+              <tr>
+                <th>Call Date</th>
+                <th>Customer Name</th>
+                <th>Contact</th>
+                <th>Call Status</th>
+                <th>Customer Feedback</th>
+                <th>Next Follow-up Date</th>
+                <th>Expected Amount</th>
+                <th>CRE</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Dynamic Rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: INTERACTIVE FOLLOW-UP CALENDAR -->
+    <section id="tab-calendar-view" class="tab-content">
+      <div class="glass-panel">
+        <div class="calendar-header">
+          <div>
+            <h3 id="calendarMonthTitle">Follow-up Calendar</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">Click any date to see scheduled follow-ups and calls logged on that day</p>
+          </div>
+          <div class="calendar-nav-btns">
+            <button class="btn btn-secondary" id="btnCalPrev">◀ Prev</button>
+            <button class="btn btn-secondary" id="btnCalToday">Today</button>
+            <button class="btn btn-secondary" id="btnCalNext">Next ▶</button>
+          </div>
+        </div>
+
+        <div class="calendar-wrapper">
+          <div class="calendar-grid" id="calendarDaysHeader">
+            <div class="calendar-day-header">Sun</div>
+            <div class="calendar-day-header">Mon</div>
+            <div class="calendar-day-header">Tue</div>
+            <div class="calendar-day-header">Wed</div>
+            <div class="calendar-day-header">Thu</div>
+            <div class="calendar-day-header">Fri</div>
+            <div class="calendar-day-header">Sat</div>
+          </div>
+          <div class="calendar-grid" id="calendarCellsContainer">
+            <!-- Calendar day cells loaded dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Selected Date Detail Box -->
+      <div class="glass-panel" id="calendarSelectedDatePanel" style="display: none;">
+        <div class="panel-header">
+          <div>
+            <h4 id="calendarSelectedDateHeading">Activities on Selected Date</h4>
+            <p style="color: var(--text-secondary); font-size: 0.82rem;" id="calendarSelectedDateSub">Customer calls and follow-ups</p>
+          </div>
+          <button class="btn btn-primary" id="btnScheduleOnSelectedDate">+ Schedule Follow-up for this Date</button>
+        </div>
+        <div id="calendarSelectedEventsList"></div>
       </div>
     </section>
 
@@ -519,6 +638,83 @@ git push -u origin main</pre>
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
           <button type="button" class="btn btn-secondary" onclick="closeEnquiryModal()">Cancel</button>
           <button type="submit" class="btn btn-primary">Update Enquiry</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Log CRE Call & Next Follow-up -->
+  <div class="modal-overlay" id="creModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="creModalTitle">📞 Log Customer Call & Follow-up</h3>
+        <button class="close-btn" onclick="closeCREModal()">&times;</button>
+      </div>
+      <form id="creForm">
+        <input type="hidden" id="creClientId">
+        
+        <div class="form-group">
+          <label class="form-label">Customer / Client Name *</label>
+          <input type="text" class="form-control" id="creClientName" required placeholder="e.g. RAWAT ELECTRICALS">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Customer Contact Number</label>
+          <input type="text" class="form-control" id="creContactNumber" placeholder="e.g. 9829461116">
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Call Date *</label>
+            <input type="date" class="form-control" id="creCallDate" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Call Status *</label>
+            <select class="form-control" id="creCallStatus">
+              <option value="Connected">Connected</option>
+              <option value="Busy / No Answer">Busy / No Answer</option>
+              <option value="Call Back Requested">Call Back Requested</option>
+              <option value="Order Promised">Order Promised</option>
+              <option value="Wrong Number">Wrong Number</option>
+              <option value="Not Interested">Not Interested</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Customer Feedback (ग्राहक का क्या feedback रहा) *</label>
+          <textarea class="form-control" id="creFeedback" rows="3" required placeholder="Customer said stock is available, promised next order next week, discussed rates..."></textarea>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Next Follow-up Date (कब Call करना है) *</label>
+            <input type="date" class="form-control" id="creNextFollowUpDate" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Expected Order Amount (₹)</label>
+            <input type="number" class="form-control" id="creExpectedAmount" placeholder="e.g. 50000">
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Customer Sentiment</label>
+            <select class="form-control" id="creSentiment">
+              <option value="Positive">😊 Positive (Good response)</option>
+              <option value="Neutral">😐 Neutral (Thinking / Normal)</option>
+              <option value="Negative">😟 Negative (Price / Quality issue)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">CRE Executive Name</label>
+            <input type="text" class="form-control" id="creExecutiveName" placeholder="e.g. Priya Sharma">
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+          <button type="button" class="btn btn-secondary" onclick="closeCREModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" style="background: linear-gradient(135deg, #10b981, #059669);">Save & Schedule in Calendar</button>
         </div>
       </form>
     </div>
