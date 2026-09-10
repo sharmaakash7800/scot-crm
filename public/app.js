@@ -10,11 +10,19 @@ function formatCurrency(num) {
   return '₹' + Math.round(num).toLocaleString('en-IN');
 }
 
-function formatDate(dateStr) {
+const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatDate(dateStr, format = 'readable') {
   if (!dateStr) return '-';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return '-';
-  return d.toISOString().split('T')[0];
+  if (format === 'iso') {
+    return d.toISOString().split('T')[0];
+  }
+  const day = d.getDate();
+  const month = MONTH_NAMES_SHORT[d.getMonth()];
+  const year = d.getFullYear();
+  return `${day} ${month} ${year}`;
 }
 
 function getStatusBadge(status) {
@@ -266,6 +274,18 @@ async function loadTrendCharts() {
   }
 }
 
+// State for SCOT Table Filters & Summary
+let scotFilterState = {
+  search: '',
+  status: 'all',
+  executive: 'all',
+  followUpStatus: 'all',
+  quickView: 'all' // 'all', 'dueToday', 'overdue', 'notPlanned', 'atRisk'
+};
+
+let allExecutivesList = [];
+let expandedRowIds = new Set();
+
 // 2. Monthly SCOT Sheet View
 let currentScotRecords = [];
 
@@ -273,82 +293,446 @@ async function loadScotMonthly() {
   try {
     document.getElementById('scotSheetTitle').innerText = `Monthly SCOT Sheet: ${currentMonthKey}`;
     const tbody = document.querySelector('#scotSheetTable tbody');
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align: center;">Calculating live SCOT metrics...</td></tr>';
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 30px; color: var(--text-secondary);">Calculating live SCOT metrics...</td></tr>';
+    }
+
+    // Load executives for filters & dropdowns in parallel
+    await loadExecutivesList();
 
     const res = await fetch(`/api/scot-month/${encodeURIComponent(currentMonthKey)}`);
     const data = await res.json();
     currentScotRecords = data.records || [];
-    renderScotTable(currentScotRecords);
+
+    // Calculate & render summary pills
+    updateScotSummaryPills(currentScotRecords);
+
+    // Populate executive filter dropdown
+    populateScotExecutiveFilter();
+
+    // Apply active filters and render
+    applyScotFiltersAndRender();
   } catch (err) {
     console.error('Error loading SCOT sheet:', err);
   }
 }
 
+// Update Operational Summary Strip
+function updateScotSummaryPills(records) {
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+
+  let totalClients = records.length;
+  let dueToday = 0;
+  let overdue = 0;
+  let notPlanned = 0;
+  let atRisk = 0;
+
+  for (const r of records) {
+    const plannedStr = r.plannedDate ? r.plannedDate.split('T')[0] : '';
+    const isDone = r.followUpStatus === 'Taken / Done';
+
+    if (r.status && r.status.startsWith('At Risk')) {
+      atRisk++;
+    }
+
+    if (isDone) {
+      // Completed followups
+    } else if (plannedStr === todayStr) {
+      dueToday++;
+    } else if (plannedStr && plannedStr < todayStr) {
+      overdue++;
+    } else if (!plannedStr || r.followUpStatus === 'Not Set' || r.followUpStatus === 'Not Planned') {
+      notPlanned++;
+    }
+  }
+
+  const elClients = document.getElementById('summaryValClients');
+  const elDueToday = document.getElementById('summaryValDueToday');
+  const elOverdue = document.getElementById('summaryValOverdue');
+  const elNotPlanned = document.getElementById('summaryValNotPlanned');
+  const elAtRisk = document.getElementById('summaryValAtRisk');
+
+  if (elClients) elClients.innerText = totalClients;
+  if (elDueToday) elDueToday.innerText = dueToday;
+  if (elOverdue) elOverdue.innerText = overdue;
+  if (elNotPlanned) elNotPlanned.innerText = notPlanned;
+  if (elAtRisk) elAtRisk.innerText = atRisk;
+}
+
+// Populate Follow-up By filter dropdown from allExecutivesList
+function populateScotExecutiveFilter() {
+  const sel = document.getElementById('scotFilterExecutive');
+  if (!sel) return;
+
+  const currentVal = scotFilterState.executive;
+  sel.innerHTML = '<option value="all">Follow-up By: All</option>';
+
+  allExecutivesList.forEach(ex => {
+    if (!ex.name) return;
+    const opt = document.createElement('option');
+    opt.value = ex.name;
+    opt.innerText = ex.name + (!ex.isActive ? ' (Inactive)' : '');
+    sel.appendChild(opt);
+  });
+
+  sel.value = currentVal;
+}
+
+// Compute follow-up workflow state for a row
+function getRowFollowUpState(r) {
+  if (r.followUpStatus === 'Taken / Done') return 'Done';
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const plannedStr = r.plannedDate ? r.plannedDate.split('T')[0] : '';
+
+  if (plannedStr === todayStr) return 'Due Today';
+  if (plannedStr && plannedStr < todayStr) return 'Overdue';
+  if (plannedStr && plannedStr > todayStr) return 'Planned';
+  return 'Not Planned';
+}
+
+// Apply Filters (Search + Status + Executive + Follow-up Status + Quick View)
+function applyScotFiltersAndRender() {
+  const q = (scotFilterState.search || '').toLowerCase().trim();
+  const stFilter = scotFilterState.status;
+  const exFilter = scotFilterState.executive;
+  const fsFilter = scotFilterState.followUpStatus;
+  const qView = scotFilterState.quickView;
+
+  const filtered = currentScotRecords.filter(r => {
+    // 1. Search (client name, contact, executive, remarks)
+    if (q) {
+      const matchName = (r.clientName || '').toLowerCase().includes(q);
+      const matchContact = (r.contactNumber || '').includes(q);
+      const matchExec = (r.followUpTakenBy || '').toLowerCase().includes(q);
+      const matchRemark = (r.remark || '').toLowerCase().includes(q);
+      if (!matchName && !matchContact && !matchExec && !matchRemark) return false;
+    }
+
+    // 2. Client Status filter (Active, Slow, At Risk, Inactive, No Orders)
+    if (stFilter !== 'all') {
+      if (!r.status || !r.status.toLowerCase().startsWith(stFilter.toLowerCase())) {
+        return false;
+      }
+    }
+
+    // 3. Follow-up By filter
+    if (exFilter !== 'all') {
+      if ((r.followUpTakenBy || '').trim().toLowerCase() !== exFilter.trim().toLowerCase()) {
+        return false;
+      }
+    }
+
+    // Compute row's dynamic workflow follow-up status
+    const fuState = getRowFollowUpState(r);
+
+    // 4. Follow-up Status filter (Due Today, Overdue, Planned, Done, Not Planned)
+    if (fsFilter !== 'all') {
+      if (fuState.toLowerCase() !== fsFilter.toLowerCase()) {
+        return false;
+      }
+    }
+
+    // 5. Quick View Filter
+    if (qView === 'dueToday' && fuState !== 'Due Today') return false;
+    if (qView === 'overdue' && fuState !== 'Overdue') return false;
+    if (qView === 'notPlanned' && fuState !== 'Not Planned') return false;
+    if (qView === 'atRisk' && (!r.status || !r.status.startsWith('At Risk'))) return false;
+
+    return true;
+  });
+
+  // Update Result Count Badge
+  const countBadge = document.getElementById('scotResultsCount');
+  if (countBadge) {
+    if (filtered.length === currentScotRecords.length) {
+      countBadge.innerText = `Showing ${filtered.length} clients`;
+    } else {
+      countBadge.innerText = `Showing ${filtered.length} of ${currentScotRecords.length} clients`;
+    }
+  }
+
+  // Update Active Filter Chips & Clear Button
+  renderActiveFilterChips();
+
+  // Render Table Rows
+  renderScotTable(filtered);
+}
+
+// Active Filter Chips Rendering
+function renderActiveFilterChips() {
+  const container = document.getElementById('scotActiveFilterChips');
+  const clearBtn = document.getElementById('btnScotClearFilters');
+  if (!container) return;
+
+  const chips = [];
+  if (scotFilterState.search) {
+    chips.push({ key: 'search', label: `Search: "${scotFilterState.search}"` });
+  }
+  if (scotFilterState.status !== 'all') {
+    chips.push({ key: 'status', label: `Status: ${scotFilterState.status}` });
+  }
+  if (scotFilterState.executive !== 'all') {
+    chips.push({ key: 'executive', label: `CRE: ${scotFilterState.executive}` });
+  }
+  if (scotFilterState.followUpStatus !== 'all') {
+    chips.push({ key: 'followUpStatus', label: `Follow-up: ${scotFilterState.followUpStatus}` });
+  }
+  if (scotFilterState.quickView !== 'all') {
+    let viewName = 'Quick View';
+    if (scotFilterState.quickView === 'dueToday') viewName = 'Due Today';
+    if (scotFilterState.quickView === 'overdue') viewName = 'Overdue';
+    if (scotFilterState.quickView === 'notPlanned') viewName = 'Not Planned';
+    if (scotFilterState.quickView === 'atRisk') viewName = 'At Risk';
+    chips.push({ key: 'quickView', label: `View: ${viewName}` });
+  }
+
+  if (chips.length > 0) {
+    container.style.display = 'flex';
+    container.innerHTML = chips.map(c => `
+      <span class="filter-chip">
+        <span>${c.label}</span>
+        <span class="filter-chip-remove" onclick="removeScotFilterChip('${c.key}')">&times;</span>
+      </span>
+    `).join('') + `
+      <button type="button" class="btn btn-secondary btn-action-sm" onclick="clearAllScotFilters()" style="margin-left: 6px; font-size: 0.72rem; padding: 2px 8px;">Clear All</button>
+    `;
+    if (clearBtn) clearBtn.classList.add('active');
+  } else {
+    container.style.display = 'none';
+    container.innerHTML = '';
+    if (clearBtn) clearBtn.classList.remove('active');
+  }
+}
+
+function removeScotFilterChip(key) {
+  if (key === 'search') {
+    scotFilterState.search = '';
+    const el = document.getElementById('scotSearch');
+    if (el) el.value = '';
+  } else if (key === 'status') {
+    scotFilterState.status = 'all';
+    const el = document.getElementById('scotFilterStatus');
+    if (el) el.value = 'all';
+  } else if (key === 'executive') {
+    scotFilterState.executive = 'all';
+    const el = document.getElementById('scotFilterExecutive');
+    if (el) el.value = 'all';
+  } else if (key === 'followUpStatus') {
+    scotFilterState.followUpStatus = 'all';
+    const el = document.getElementById('scotFilterFollowUpStatus');
+    if (el) el.value = 'all';
+  } else if (key === 'quickView') {
+    scotFilterState.quickView = 'all';
+    document.querySelectorAll('.summary-pill').forEach(p => p.classList.remove('active'));
+    document.getElementById('summaryPillAll')?.classList.add('active');
+  }
+  applyScotFiltersAndRender();
+}
+
+function clearAllScotFilters() {
+  scotFilterState.search = '';
+  scotFilterState.status = 'all';
+  scotFilterState.executive = 'all';
+  scotFilterState.followUpStatus = 'all';
+  scotFilterState.quickView = 'all';
+
+  const elS = document.getElementById('scotSearch');
+  if (elS) elS.value = '';
+  const elSt = document.getElementById('scotFilterStatus');
+  if (elSt) elSt.value = 'all';
+  const elEx = document.getElementById('scotFilterExecutive');
+  if (elEx) elEx.value = 'all';
+  const elFs = document.getElementById('scotFilterFollowUpStatus');
+  if (elFs) elFs.value = 'all';
+
+  document.querySelectorAll('.summary-pill').forEach(p => p.classList.remove('active'));
+  document.getElementById('summaryPillAll')?.classList.add('active');
+
+  applyScotFiltersAndRender();
+}
+
+// Render Compact 9-Column SCOT Table with expandable details
 function renderScotTable(records) {
   const tbody = document.querySelector('#scotSheetTable tbody');
+  if (!tbody) return;
+
   if (records.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="13" style="text-align: center; color: var(--text-muted);">No records found.</td></tr>';
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="10" style="text-align: center; padding: 40px; color: var(--text-muted);">
+          <div style="font-size: 1.8rem; margin-bottom: 8px;">🔍</div>
+          <h4>No clients match the active filters</h4>
+          <p style="font-size: 0.82rem; margin-top: 4px;">Try clearing one or more filters or search terms.</p>
+          <button class="btn btn-secondary btn-action-sm" onclick="clearAllScotFilters()" style="margin-top: 12px;">Clear Filters</button>
+        </td>
+      </tr>
+    `;
     return;
   }
 
   tbody.innerHTML = records.map(r => {
-    // Month-specific status badge
-    let statusBadge = '<span class="badge badge-none">Not Planned</span>';
-    if (r.followUpStatus === 'Taken / Done') {
-      statusBadge = '<span class="badge badge-active">✅ Done</span>';
-    } else if (r.followUpStatus === 'Pending') {
-      statusBadge = '<span class="badge badge-slow">⏳ Pending</span>';
+    const isExpanded = expandedRowIds.has(r._id);
+    const fuState = getRowFollowUpState(r);
+
+    let fuBadge = '<span class="badge badge-none"><span class="badge-dot">●</span> Not Planned</span>';
+    if (fuState === 'Done') {
+      fuBadge = '<span class="badge badge-active"><span class="badge-dot">●</span> Done</span>';
+    } else if (fuState === 'Due Today') {
+      fuBadge = '<span class="badge badge-slow"><span class="badge-dot">●</span> Due Today</span>';
+    } else if (fuState === 'Overdue') {
+      fuBadge = '<span class="badge badge-inactive"><span class="badge-dot">●</span> Overdue</span>';
+    } else if (fuState === 'Planned') {
+      fuBadge = '<span class="badge badge-risk"><span class="badge-dot">●</span> Planned</span>';
     }
 
-    const plannedDisplay = r.plannedDate 
-      ? `<strong style="color: var(--accent-cyan);">${formatDate(r.plannedDate)}</strong>` 
-      : '<span style="color: var(--text-muted);">-</span>';
+    // Days Since styling with semantic aging emphasis
+    let daysStyle = 'font-weight: 600;';
+    if (r.daysSinceLastOrder >= 182) {
+      daysStyle += ' color: var(--accent-rose);';
+    } else if (r.daysSinceLastOrder > 90) {
+      daysStyle += ' color: var(--accent-amber);';
+    }
 
-    const actualDisplay = r.actualDate 
-      ? `<strong style="color: #10b981;">${formatDate(r.actualDate)}</strong>` 
-      : '<span style="color: var(--text-muted);">-</span>';
+    // Safe escaped strings for inline actions
+    const safeName = (r.clientName || '').replace(/'/g, "\\'");
+    const safePlanned = r.plannedDate ? r.plannedDate.split('T')[0] : '';
+    const safeTakenBy = (r.followUpTakenBy || '').replace(/'/g, "\\'");
+    const safeStatus = r.followUpStatus || 'Pending';
+    const safeRemark = (r.remark || '').replace(/'/g, "\\'");
 
-    const remarkDisplay = r.remark 
-      ? `<span style="display: block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem;" title="${r.remark.replace(/"/g, '&quot;')}">${r.remark}</span>` 
-      : '<span style="color: var(--text-muted);">-</span>';
-
-    return `
-      <tr>
-        <td class="col-client"><strong>${r.clientName}</strong></td>
-        <td>${r.contactNumber || '-'}</td>
-        <td class="col-numeric"><span style="font-weight: 600;">${r.daysSinceLastOrder === 9999 ? '9999' : r.daysSinceLastOrder}</span></td>
-        <td>${formatDate(r.lastOrderDate)}</td>
-        <td class="col-numeric">${r.totalInvoices}</td>
+    // Row HTML
+    let rowHtml = `
+      <tr class="client-data-row ${isExpanded ? 'active-expanded-row' : ''}">
+        <td style="text-align: center;">
+          <button class="btn-row-expand ${isExpanded ? 'expanded' : ''}" onclick="toggleRowExpansion('${r._id}')" title="Toggle Secondary Details">
+            ▶
+          </button>
+        </td>
+        <td class="col-client">
+          <a class="client-name-link" onclick="openClientOverviewDrawer('${r._id}')" title="Click to view client drawer: ${r.clientName}">
+            ${r.clientName}
+          </a>
+        </td>
+        <td style="color: var(--text-secondary);">${r.contactNumber || '-'}</td>
+        <td class="col-numeric"><span style="${daysStyle}">${r.daysSinceLastOrder === 9999 ? '9999' : r.daysSinceLastOrder}</span></td>
+        <td style="color: var(--text-secondary);">${formatDate(r.lastOrderDate)}</td>
         <td class="col-numeric"><strong>${formatCurrency(r.totalSales)}</strong></td>
         <td>${getStatusBadge(r.status)}</td>
-        <td>${plannedDisplay}</td>
-        <td>${actualDisplay}</td>
-        <td>${r.followUpTakenBy || '<span style="color: var(--text-muted);">-</span>'}</td>
-        <td>${statusBadge}</td>
-        <td>${remarkDisplay}</td>
+        <td style="color: var(--text-secondary);">${r.followUpTakenBy || '<span style="color: var(--text-muted);">-</span>'}</td>
+        <td>${fuBadge}</td>
         <td>
-          <div style="display: flex; gap: 6px; align-items: center;">
-            <button class="btn btn-secondary btn-action-sm" title="Update follow-up for this month" onclick="openQuickFollowUpModal('${r._id}', '${r.clientName.replace(/'/g, "\\'")}', '${r.plannedDate ? r.plannedDate.split('T')[0] : ''}', '${(r.followUpTakenBy || '').replace(/'/g, "\\'")}', '${r.followUpStatus || 'Pending'}', '${(r.remark || '').replace(/'/g, "\\'")}')">
+          <div class="action-btn-group">
+            <button class="btn-action-icon" title="Edit Client & Follow-up" onclick="openEditDrawer('${r._id}')">
+              ✏️ Edit
+            </button>
+            <button class="btn-action-icon" title="Quick Set Follow-up" onclick="openQuickFollowUpModal('${r._id}', '${safeName}', '${safePlanned}', '${safeTakenBy}', '${safeStatus}', '${safeRemark}')">
               ⚡ Set
             </button>
-            <button class="btn btn-secondary btn-action-sm" style="color: var(--accent-cyan);" title="View complete follow-up audit trail" onclick="viewClientHistory('${r._id}')">
-              📜 History
-            </button>
+            <div class="action-dropdown-wrap">
+              <button class="btn-action-icon" onclick="toggleActionMenu(event, 'actionMenu_${r._id}')" title="More Actions">
+                ⋯
+              </button>
+              <div class="action-menu-popup" id="actionMenu_${r._id}">
+                <button type="button" class="action-menu-item" onclick="openClientOverviewDrawer('${r._id}')">
+                  👤 Open Profile
+                </button>
+                <button type="button" class="action-menu-item" onclick="openEditDrawer('${r._id}')">
+                  ✏️ Edit Record
+                </button>
+                <button type="button" class="action-menu-item" onclick="viewClientHistory('${r._id}')">
+                  📜 Full History
+                </button>
+                <button type="button" class="action-menu-item" onclick="quickFollowUpCall('${safeName}', '${r.contactNumber || ''}', '${r._id}')">
+                  📞 Log Call
+                </button>
+              </div>
+            </div>
           </div>
         </td>
       </tr>
     `;
+
+    // If row is expanded, show secondary inline details
+    if (isExpanded) {
+      rowHtml += `
+        <tr class="row-expanded-container">
+          <td colspan="10" style="padding: 0;">
+            <div class="row-expanded-details">
+              <div class="expanded-grid">
+                <div class="expanded-item">
+                  <span class="expanded-item-label">Total Invoices Booked</span>
+                  <span class="expanded-item-val"><strong>${r.totalInvoices}</strong> invoices</span>
+                </div>
+                <div class="expanded-item">
+                  <span class="expanded-item-label">Next Planned Follow-Up</span>
+                  <span class="expanded-item-val">${r.plannedDate ? `<strong style="color: var(--accent-cyan);">${formatDate(r.plannedDate)}</strong>` : '<span style="color: var(--text-muted);">Not Scheduled</span>'}</span>
+                </div>
+                <div class="expanded-item">
+                  <span class="expanded-item-label">Actual Call Date</span>
+                  <span class="expanded-item-val">${r.actualDate ? `<strong style="color: #10b981;">${formatDate(r.actualDate)}</strong>` : '<span style="color: var(--text-muted);">-</span>'}</span>
+                </div>
+                <div class="expanded-item">
+                  <span class="expanded-item-label">Usual Order Gap</span>
+                  <span class="expanded-item-val">${r.usualOrderGap || 0} days</span>
+                </div>
+                <div class="expanded-item">
+                  <span class="expanded-item-label">Average Order Size</span>
+                  <span class="expanded-item-val">${formatCurrency(r.avgOrderSize)}</span>
+                </div>
+                <div class="expanded-item">
+                  <span class="expanded-item-label">Follow-up Workflow</span>
+                  <span class="expanded-item-val">${fuBadge}</span>
+                </div>
+              </div>
+
+              <div>
+                <span class="expanded-item-label">Latest Feedback / Remark:</span>
+                <div class="expanded-remark-box">
+                  "${r.remark || 'No feedback or remarks logged for this month yet.'}"
+                  <button class="btn btn-secondary btn-action-sm" style="margin-left: 12px; font-size: 0.72rem; color: var(--accent-cyan);" onclick="viewClientHistory('${r._id}')">
+                    View Complete Audit Trail →
+                  </button>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+
+    return rowHtml;
   }).join('');
 }
 
-// Filter SCOT table
-document.getElementById('scotSearch')?.addEventListener('input', (e) => {
-  const q = e.target.value.toLowerCase().trim();
-  const filtered = currentScotRecords.filter(r => 
-    r.clientName.toLowerCase().includes(q) || 
-    (r.contactNumber && r.contactNumber.includes(q))
-  );
-  renderScotTable(filtered);
+// Row Expansion Toggle
+function toggleRowExpansion(clientId) {
+  if (expandedRowIds.has(clientId)) {
+    expandedRowIds.delete(clientId);
+  } else {
+    expandedRowIds.add(clientId);
+  }
+  applyScotFiltersAndRender();
+}
+
+// Overflow Action Menu toggle
+function toggleActionMenu(event, menuId) {
+  event.stopPropagation();
+  const allMenus = document.querySelectorAll('.action-menu-popup');
+  allMenus.forEach(m => {
+    if (m.id !== menuId) m.classList.remove('show');
+  });
+
+  const menu = document.getElementById(menuId);
+  if (menu) {
+    menu.classList.toggle('show');
+  }
+}
+
+// Close menus when clicking outside
+document.addEventListener('click', () => {
+  document.querySelectorAll('.action-menu-popup').forEach(m => m.classList.remove('show'));
 });
 
 // 3. Monthly Loss Matrix View
@@ -1494,43 +1878,498 @@ document.getElementById('btnRefresh')?.addEventListener('click', () => {
 document.getElementById('btnNewTransaction')?.addEventListener('click', openTxModal);
 document.getElementById('btnNewClient')?.addEventListener('click', () => openClientModal());
 
-// Tab navigation listeners
-document.querySelectorAll('.nav-link').forEach(link => {
-  link.addEventListener('click', () => {
-    const tab = link.getAttribute('data-tab');
-    switchTab(tab);
-  });
-});
+// ==================== TOAST NOTIFICATION UTILITY ==================== //
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
 
-// ==================== SIDEBAR AUTO-REMOVE & TOGGLE ==================== //
-function initSidebar() {
-  const toggleBtn = document.getElementById('btnSidebarToggle');
-  const backdrop = document.getElementById('sidebarBackdrop');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type === 'error' ? 'toast-error' : ''}`;
+  toast.innerHTML = `
+    <span>${type === 'error' ? '⚠️' : '✅'}</span>
+    <span>${message}</span>
+  `;
 
-  // Toggle button click
-  toggleBtn?.addEventListener('click', () => {
-    document.body.classList.toggle('sidebar-collapsed');
-    localStorage.setItem('scot_sidebar_collapsed', document.body.classList.contains('sidebar-collapsed'));
-  });
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(10px)';
+    toast.style.transition = 'all 0.25s ease';
+    setTimeout(() => toast.remove(), 250);
+  }, 3200);
+}
 
-  // Auto-remove when clicking outside / on backdrop
-  backdrop?.addEventListener('click', () => {
-    document.body.classList.add('sidebar-collapsed');
-    localStorage.setItem('scot_sidebar_collapsed', true);
-  });
-
-  // Check saved state or auto-remove on smaller laptop/tablet screens
-  const savedState = localStorage.getItem('scot_sidebar_collapsed');
-  if (savedState === 'true' || window.innerWidth < 1100) {
-    document.body.classList.add('sidebar-collapsed');
+// ==================== CRE / DOER MANAGEMENT FRONTEND ==================== //
+async function loadExecutivesList() {
+  try {
+    const res = await fetch('/api/executives');
+    const data = await res.json();
+    allExecutivesList = data.executives || [];
+    renderExecutivesModalTable();
+  } catch (err) {
+    console.error('Error loading executives:', err);
   }
 }
 
-// Initialize on page load
+function openCREManagementModal() {
+  loadExecutivesList();
+  document.getElementById('creManagementModal').classList.add('active');
+}
+
+function closeCREManagementModal() {
+  document.getElementById('creManagementModal').classList.remove('active');
+  populateScotExecutiveFilter();
+}
+
+function renderExecutivesModalTable() {
+  const tbody = document.getElementById('executivesListBody');
+  if (!tbody) return;
+
+  if (allExecutivesList.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 16px;">No CRE / Doers found. Add one above.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = allExecutivesList.map(ex => {
+    const isAct = ex.isActive;
+    const statusBadge = isAct
+      ? '<span class="badge badge-active"><span class="badge-dot">●</span> Active</span>'
+      : '<span class="badge badge-none"><span class="badge-dot">●</span> Inactive</span>';
+
+    return `
+      <tr>
+        <td>
+          <strong style="color: var(--text-primary);">${ex.name}</strong>
+          ${ex.phone ? `<br><small style="color: var(--text-muted);">${ex.phone}</small>` : ''}
+        </td>
+        <td>${statusBadge}</td>
+        <td class="col-numeric">
+          <strong>${ex.assignedCount || 0}</strong> active
+        </td>
+        <td style="text-align: right;">
+          <div style="display: inline-flex; gap: 6px;">
+            <button class="btn btn-secondary btn-action-sm" onclick="toggleExecutiveStatus('${ex._id}', ${!isAct})" title="${isAct ? 'Deactivate CRE' : 'Activate CRE'}">
+              ${isAct ? 'Deactivate' : 'Activate'}
+            </button>
+            ${(ex.assignedCount || 0) > 0 ? `
+              <button class="btn btn-secondary btn-action-sm" style="color: var(--accent-cyan);" onclick="openReassignModal('${ex.name}')" title="Reassign active follow-ups">
+                🔄 Reassign
+              </button>
+            ` : ''}
+            <button class="btn btn-secondary btn-action-sm" style="color: var(--accent-rose);" onclick="deleteExecutive('${ex._id}', '${ex.name}', ${ex.assignedCount || 0})" title="Remove CRE">
+              🗑️
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Add new Executive form submission
+document.getElementById('addExecutiveForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('newExecName').value.trim();
+  const phone = document.getElementById('newExecPhone').value.trim();
+
+  if (!name) return;
+
+  try {
+    const res = await fetch('/api/executives', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, phone })
+    });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('addExecutiveForm').reset();
+      showToast(`Added ${name} as CRE / Doer`);
+      loadExecutivesList();
+    } else {
+      alert(data.error || 'Failed to add CRE');
+    }
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
+});
+
+// Toggle executive active status
+async function toggleExecutiveStatus(id, newStatus) {
+  try {
+    const res = await fetch(`/api/executives/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: newStatus })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`CRE status updated to ${newStatus ? 'Active' : 'Inactive'}`);
+      loadExecutivesList();
+    }
+  } catch (err) {
+    alert('Error updating status: ' + err.message);
+  }
+}
+
+// Delete executive with safety check
+async function deleteExecutive(id, name, assignedCount) {
+  if (assignedCount > 0) {
+    alert(`⚠️ Cannot remove "${name}": This CRE is currently assigned to ${assignedCount} active client follow-ups.\n\nPlease click "🔄 Reassign" to transfer those records before removing, or Deactivate instead.`);
+    return;
+  }
+
+  if (!confirm(`Are you sure you want to remove "${name}" from the CRE team?`)) return;
+
+  try {
+    const res = await fetch(`/api/executives/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`Removed CRE "${name}"`);
+      loadExecutivesList();
+    } else {
+      alert(data.error || 'Failed to delete CRE');
+    }
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
+}
+
+// Reassign Modal
+function openReassignModal(fromName) {
+  document.getElementById('reassignFromName').value = fromName;
+  document.getElementById('reassignFromDisplay').value = fromName;
+
+  const toSelect = document.getElementById('reassignToSelect');
+  toSelect.innerHTML = '';
+  allExecutivesList
+    .filter(ex => ex.name !== fromName && ex.isActive)
+    .forEach(ex => {
+      const opt = document.createElement('option');
+      opt.value = ex.name;
+      opt.innerText = ex.name;
+      toSelect.appendChild(opt);
+    });
+
+  if (toSelect.options.length === 0) {
+    alert('No other active CRE available to reassign to. Please add or activate another CRE first.');
+    return;
+  }
+
+  document.getElementById('reassignModal').classList.add('active');
+}
+
+function closeReassignModal() {
+  document.getElementById('reassignModal').classList.remove('active');
+  document.getElementById('reassignForm').reset();
+}
+
+document.getElementById('reassignForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fromExecutive = document.getElementById('reassignFromName').value;
+  const toExecutive = document.getElementById('reassignToSelect').value;
+  const deactivateFrom = document.getElementById('reassignDeactivateCheck').checked;
+
+  try {
+    const res = await fetch('/api/executives/reassign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fromExecutive, toExecutive, deactivateFrom })
+    });
+    const data = await res.json();
+    if (data.success) {
+      closeReassignModal();
+      showToast(`Reassigned records from ${fromExecutive} to ${toExecutive}`);
+      loadExecutivesList();
+      loadScotMonthly();
+      loadTodayFollowUpAgenda();
+    } else {
+      alert(data.error || 'Reassignment failed');
+    }
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
+});
+
+// ==================== EDIT CLIENT DRAWER ==================== //
+async function openEditDrawer(clientId) {
+  const r = currentScotRecords.find(item => item._id === clientId);
+  if (!r) return;
+
+  document.getElementById('drawerClientId').value = r._id;
+  document.getElementById('drawerClientName').value = r.clientName || '';
+  document.getElementById('drawerContactNumber').value = r.contactNumber || '';
+  document.getElementById('drawerAddress').value = r.address || '';
+  document.getElementById('drawerUsualGap').value = r.usualOrderGap || 0;
+
+  // Read-only stat displays
+  document.getElementById('drawerDaysSince').innerText = r.daysSinceLastOrder === 9999 ? '9999' : r.daysSinceLastOrder;
+  document.getElementById('drawerTotalSales').innerText = formatCurrency(r.totalSales);
+  document.getElementById('drawerInvoices').innerText = r.totalInvoices;
+  document.getElementById('drawerHealthBadge').innerHTML = getStatusBadge(r.status);
+
+  // Populate CRE dropdown inside drawer
+  const creSel = document.getElementById('drawerFollowUpBy');
+  creSel.innerHTML = '';
+  allExecutivesList.forEach(ex => {
+    const opt = document.createElement('option');
+    opt.value = ex.name;
+    opt.innerText = ex.name + (!ex.isActive ? ' (Inactive)' : '');
+    creSel.appendChild(opt);
+  });
+  if (r.followUpTakenBy) {
+    creSel.value = r.followUpTakenBy;
+  }
+
+  document.getElementById('drawerFollowUpStatus').value = r.followUpStatus || 'Pending';
+  document.getElementById('drawerPlannedDate').value = r.plannedDate ? r.plannedDate.split('T')[0] : '';
+  document.getElementById('drawerActualDate').value = r.actualDate ? r.actualDate.split('T')[0] : '';
+  document.getElementById('drawerRemark').value = r.remark || '';
+
+  document.getElementById('editClientDrawerOverlay').classList.add('active');
+}
+
+function closeEditDrawer() {
+  document.getElementById('editClientDrawerOverlay').classList.remove('active');
+}
+
+document.getElementById('editClientForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const clientId = document.getElementById('drawerClientId').value;
+  const clientName = document.getElementById('drawerClientName').value.trim();
+  const contactNumber = document.getElementById('drawerContactNumber').value.trim();
+  const address = document.getElementById('drawerAddress').value.trim();
+  const usualOrderGap = Number(document.getElementById('drawerUsualGap').value) || 0;
+  const followUpTakenBy = document.getElementById('drawerFollowUpBy').value;
+  const followUpStatus = document.getElementById('drawerFollowUpStatus').value;
+  const plannedDate = document.getElementById('drawerPlannedDate').value;
+  const actualDate = document.getElementById('drawerActualDate').value;
+  const remark = document.getElementById('drawerRemark').value.trim();
+
+  try {
+    // 1. Update Client Core Details
+    await fetch(`/api/clients/${clientId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientName,
+        contactNumber,
+        address,
+        usualOrderGap
+      })
+    });
+
+    // 2. Update Month-specific Follow-up Details
+    const fuRes = await fetch(`/api/clients/${clientId}/followup`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nextFollowUpDate: plannedDate || null,
+        followUpTakenBy,
+        followUpStatus,
+        lastFeedback: remark
+      })
+    });
+
+    if (fuRes.ok) {
+      closeEditDrawer();
+      showToast(`Updated "${clientName}" successfully!`);
+
+      // Update in-memory record so entire page does not reload
+      const localRec = currentScotRecords.find(item => item._id === clientId);
+      if (localRec) {
+        localRec.clientName = clientName;
+        localRec.contactNumber = contactNumber;
+        localRec.address = address;
+        localRec.usualOrderGap = usualOrderGap;
+        localRec.followUpTakenBy = followUpTakenBy;
+        localRec.followUpStatus = followUpStatus;
+        localRec.plannedDate = plannedDate || null;
+        localRec.actualDate = actualDate || (followUpStatus === 'Taken / Done' ? new Date().toISOString() : null);
+        localRec.remark = remark;
+      }
+      updateScotSummaryPills(currentScotRecords);
+      applyScotFiltersAndRender();
+      loadTodayFollowUpAgenda();
+    } else {
+      alert('Failed to save client details');
+    }
+  } catch (err) {
+    alert('Error saving client: ' + err.message);
+  }
+});
+
+// ==================== CLIENT OVERVIEW / DETAIL DRAWER ==================== //
+function openClientOverviewDrawer(clientId) {
+  const r = currentScotRecords.find(item => item._id === clientId);
+  if (!r) return;
+
+  document.getElementById('overviewClientName').innerText = r.clientName;
+  document.getElementById('overviewClientSubtitle').innerText = `${r.contactNumber || 'No Contact'} • ${r.address || 'No Address'}`;
+
+  const fuState = getRowFollowUpState(r);
+  let fuBadge = '<span class="badge badge-none"><span class="badge-dot">●</span> Not Planned</span>';
+  if (fuState === 'Done') fuBadge = '<span class="badge badge-active"><span class="badge-dot">●</span> Done</span>';
+  else if (fuState === 'Due Today') fuBadge = '<span class="badge badge-slow"><span class="badge-dot">●</span> Due Today</span>';
+  else if (fuState === 'Overdue') fuBadge = '<span class="badge badge-inactive"><span class="badge-dot">●</span> Overdue</span>';
+  else if (fuState === 'Planned') fuBadge = '<span class="badge badge-risk"><span class="badge-dot">●</span> Planned</span>';
+
+  const container = document.getElementById('overviewDrawerContent');
+  container.innerHTML = `
+    <!-- Top Stats -->
+    <div class="drawer-stats-strip" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 20px;">
+      <div class="drawer-stat">
+        <span class="drawer-stat-label">Total Sales</span>
+        <strong class="drawer-stat-val" style="color: var(--accent-cyan);">${formatCurrency(r.totalSales)}</strong>
+      </div>
+      <div class="drawer-stat">
+        <span class="drawer-stat-label">Invoices</span>
+        <strong class="drawer-stat-val">${r.totalInvoices}</strong>
+      </div>
+      <div class="drawer-stat">
+        <span class="drawer-stat-label">Days Since</span>
+        <strong class="drawer-stat-val">${r.daysSinceLastOrder === 9999 ? '9999' : r.daysSinceLastOrder}</strong>
+      </div>
+    </div>
+
+    <!-- Section 1: Customer Profile -->
+    <div class="drawer-section-title">Customer Overview</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+      <div>
+        <span class="expanded-item-label">Client Health Status</span>
+        <div style="margin-top: 4px;">${getStatusBadge(r.status)}</div>
+      </div>
+      <div>
+        <span class="expanded-item-label">First Order Date</span>
+        <div style="font-size: 0.88rem; margin-top: 4px;">${formatDate(r.firstOrderDate)}</div>
+      </div>
+      <div>
+        <span class="expanded-item-label">Last Order Date</span>
+        <div style="font-size: 0.88rem; margin-top: 4px;">${formatDate(r.lastOrderDate)}</div>
+      </div>
+      <div>
+        <span class="expanded-item-label">Usual Order Gap</span>
+        <div style="font-size: 0.88rem; margin-top: 4px;">${r.usualOrderGap || 0} days</div>
+      </div>
+    </div>
+
+    <!-- Section 2: Follow-up & Accountability -->
+    <div class="drawer-section-title">Follow-up & CRE Accountability</div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+      <div>
+        <span class="expanded-item-label">Assigned CRE / Doer</span>
+        <div style="font-size: 0.9rem; font-weight: 600; margin-top: 4px; color: var(--text-primary);">${r.followUpTakenBy || 'Unassigned'}</div>
+      </div>
+      <div>
+        <span class="expanded-item-label">Workflow Status</span>
+        <div style="margin-top: 4px;">${fuBadge}</div>
+      </div>
+      <div>
+        <span class="expanded-item-label">Next Planned Date</span>
+        <div style="font-size: 0.88rem; margin-top: 4px; color: var(--accent-cyan); font-weight: 600;">${r.plannedDate ? formatDate(r.plannedDate) : 'Not Scheduled'}</div>
+      </div>
+      <div>
+        <span class="expanded-item-label">Actual Call Date</span>
+        <div style="font-size: 0.88rem; margin-top: 4px; color: #10b981; font-weight: 600;">${r.actualDate ? formatDate(r.actualDate) : '-'}</div>
+      </div>
+    </div>
+
+    <!-- Remark -->
+    <div style="margin-bottom: 20px;">
+      <span class="expanded-item-label">Current Feedback / Remark:</span>
+      <div class="expanded-remark-box">
+        "${r.remark || 'No feedback logged for this client yet.'}"
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+      <button class="btn btn-cre-action" onclick="quickFollowUpCall('${(r.clientName || '').replace(/'/g, "\\'")}', '${r.contactNumber || ''}', '${r._id}')">
+        📞 Log Follow-up Call
+      </button>
+      <button class="btn btn-secondary" onclick="viewClientHistory('${r._id}')">
+        📜 View Audit Trail
+      </button>
+    </div>
+  `;
+
+  document.getElementById('btnOverviewEditAction').onclick = () => {
+    closeClientOverviewDrawer();
+    openEditDrawer(clientId);
+  };
+
+  document.getElementById('clientOverviewDrawerOverlay').classList.add('active');
+}
+
+function closeClientOverviewDrawer() {
+  document.getElementById('clientOverviewDrawerOverlay').classList.remove('active');
+}
+
+// ==================== WIRE UP SCOT FILTERS & LISTENERS ==================== //
+function initScotTableControls() {
+  // Search input with debounce
+  const searchInput = document.getElementById('scotSearch');
+  if (searchInput) {
+    let timer;
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        scotFilterState.search = e.target.value;
+        applyScotFiltersAndRender();
+      }, 200);
+    });
+  }
+
+  // 1. Status Filter
+  const filterStatus = document.getElementById('scotFilterStatus');
+  if (filterStatus) {
+    filterStatus.addEventListener('change', (e) => {
+      scotFilterState.status = e.target.value;
+      applyScotFiltersAndRender();
+    });
+  }
+
+  // 2. Follow-up By Filter
+  const filterExec = document.getElementById('scotFilterExecutive');
+  if (filterExec) {
+    filterExec.addEventListener('change', (e) => {
+      scotFilterState.executive = e.target.value;
+      applyScotFiltersAndRender();
+    });
+  }
+
+  // 3. Follow-up Status Filter
+  const filterFu = document.getElementById('scotFilterFollowUpStatus');
+  if (filterFu) {
+    filterFu.addEventListener('change', (e) => {
+      scotFilterState.followUpStatus = e.target.value;
+      applyScotFiltersAndRender();
+    });
+  }
+
+  // Clear Filters button
+  document.getElementById('btnScotClearFilters')?.addEventListener('click', clearAllScotFilters);
+
+  // Operational Summary Strip pills (quick views)
+  document.querySelectorAll('.summary-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      document.querySelectorAll('.summary-pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      scotFilterState.quickView = pill.getAttribute('data-view') || 'all';
+      applyScotFiltersAndRender();
+    });
+  });
+
+  // Manage CRE button in Header
+  document.getElementById('btnManageCRE')?.addEventListener('click', openCREManagementModal);
+}
+
+// Attach to DOM ready
 window.addEventListener('DOMContentLoaded', () => {
   initTheme();
   initSidebar();
   initAgendaControls();
+  initScotTableControls();
   loadDashboard();
 });
+
 

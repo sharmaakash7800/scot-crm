@@ -11,6 +11,7 @@ const Client = require('./models/Client');
 const Transaction = require('./models/Transaction');
 const Enquiry = require('./models/Enquiry');
 const FollowUp = require('./models/FollowUp');
+const Executive = require('./models/Executive');
 const { importExcelData, cleanNumber, parseDate } = require('./import_excel');
 
 const app = express();
@@ -1087,6 +1088,186 @@ app.post('/api/sync-google-sheet', async (req, res) => {
     res.json({
       success: true,
       message: `Google Sheet synced successfully! Processed ${rows.length - 1} rows (${importedTransactions} transactions, ${importedClients} clients).`
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==================== 11. CRE / DOER MANAGEMENT API ==================== //
+// Get all executives (with counts of assigned follow-ups)
+app.get('/api/executives', async (req, res) => {
+  try {
+    let execs = await Executive.find().sort({ name: 1 }).lean();
+
+    // Auto-seed default executives if collection is empty
+    if (execs.length === 0) {
+      const distinctNames = await FollowUp.distinct('creName');
+      const seedNames = distinctNames.filter(Boolean).length > 0
+        ? distinctNames.filter(Boolean)
+        : ['CRE Executive', 'Rajesh Sharma', 'Priya Patel', 'Amit Verma', 'Sunil Kumar'];
+
+      const toInsert = seedNames.map(name => ({
+        name: name.trim(),
+        role: 'CRE / Doer',
+        isActive: true
+      }));
+
+      for (const item of toInsert) {
+        await Executive.findOneAndUpdate({ name: item.name }, item, { upsert: true });
+      }
+      execs = await Executive.find().sort({ name: 1 }).lean();
+    }
+
+    // Attach active assignment count for each executive
+    const withCounts = await Promise.all(
+      execs.map(async (ex) => {
+        const assignedCount = await FollowUp.countDocuments({
+          creName: ex.name,
+          isCompleted: { $ne: true }
+        });
+        const totalFollowUps = await FollowUp.countDocuments({ creName: ex.name });
+        return {
+          ...ex,
+          assignedCount,
+          totalFollowUps
+        };
+      })
+    );
+
+    res.json({ success: true, executives: withCounts });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Create new executive
+app.post('/api/executives', async (req, res) => {
+  try {
+    const { name, email, phone, role } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: 'Executive name is required' });
+    }
+
+    const existing = await Executive.findOne({ name: { $regex: `^${name.trim()}$`, $options: 'i' } });
+    if (existing) {
+      return res.status(400).json({ success: false, error: 'A CRE / Doer with this name already exists' });
+    }
+
+    const executive = await Executive.create({
+      name: name.trim(),
+      email: email ? email.trim() : '',
+      phone: phone ? phone.trim() : '',
+      role: role || 'CRE / Doer',
+      isActive: true
+    });
+
+    res.json({ success: true, executive });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Update executive
+app.put('/api/executives/:id', async (req, res) => {
+  try {
+    const { name, email, phone, role, isActive } = req.body;
+    const ex = await Executive.findById(req.params.id);
+    if (!ex) {
+      return res.status(404).json({ success: false, error: 'Executive not found' });
+    }
+
+    const oldName = ex.name;
+    if (name && name.trim() && name.trim() !== oldName) {
+      const trimmed = name.trim();
+      await FollowUp.updateMany({ creName: oldName }, { creName: trimmed });
+      await Client.updateMany({ followUpTakenBy: oldName }, { followUpTakenBy: trimmed });
+      ex.name = trimmed;
+    }
+
+    if (email !== undefined) ex.email = email.trim();
+    if (phone !== undefined) ex.phone = phone.trim();
+    if (role !== undefined) ex.role = role.trim();
+    if (isActive !== undefined) ex.isActive = Boolean(isActive);
+
+    await ex.save();
+    res.json({ success: true, executive: ex });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Toggle active / inactive status
+app.patch('/api/executives/:id/status', async (req, res) => {
+  try {
+    const { isActive } = req.body;
+    const ex = await Executive.findByIdAndUpdate(
+      req.params.id,
+      { isActive: Boolean(isActive) },
+      { new: true }
+    );
+    if (!ex) return res.status(404).json({ success: false, error: 'Executive not found' });
+    res.json({ success: true, executive: ex });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Safe Delete / Remove check
+app.delete('/api/executives/:id', async (req, res) => {
+  try {
+    const ex = await Executive.findById(req.params.id);
+    if (!ex) {
+      return res.status(404).json({ success: false, error: 'Executive not found' });
+    }
+
+    const assignedFollowUps = await FollowUp.countDocuments({
+      creName: ex.name,
+      isCompleted: { $ne: true }
+    });
+
+    if (assignedFollowUps > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `This CRE is assigned to ${assignedFollowUps} active client follow-ups. Please reassign those records before removing, or deactivate this user instead.`,
+        assignedCount: assignedFollowUps
+      });
+    }
+
+    await Executive.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'CRE / Doer removed successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Reassign all active followups from one CRE to another
+app.post('/api/executives/reassign', async (req, res) => {
+  try {
+    const { fromExecutive, toExecutive, deactivateFrom } = req.body;
+    if (!fromExecutive || !toExecutive) {
+      return res.status(400).json({ success: false, error: 'Source and Target CRE names are required' });
+    }
+
+    const updatedFollowups = await FollowUp.updateMany(
+      { creName: fromExecutive, isCompleted: { $ne: true } },
+      { creName: toExecutive }
+    );
+
+    const updatedClients = await Client.updateMany(
+      { followUpTakenBy: fromExecutive },
+      { followUpTakenBy: toExecutive }
+    );
+
+    if (deactivateFrom) {
+      await Executive.findOneAndUpdate({ name: fromExecutive }, { isActive: false });
+    }
+
+    res.json({
+      success: true,
+      message: `Reassigned records from ${fromExecutive} to ${toExecutive} successfully`,
+      followUpsModified: updatedFollowups.modifiedCount,
+      clientsModified: updatedClients.modifiedCount
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
