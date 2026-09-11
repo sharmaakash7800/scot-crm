@@ -48,10 +48,24 @@ async function importExcelData(filePath) {
       const firstOrderDate = parseDate(row[4]);
       const uniqueId = row[5] ? String(row[5]).trim() : `Scot${String(i - 1).padStart(4, '0')}`;
 
+      const normalized = clientName.toLowerCase().replace(/\s+/g, ' ');
+      const contacts = [];
+      if (contactNumber) {
+        contacts.push({
+          name: 'Primary Contact',
+          designation: 'Contact Person',
+          phone: contactNumber,
+          email: '',
+          isPrimary: true
+        });
+      }
+
       clientsToInsert.push({
         uniqueId,
         clientName,
+        normalizedName: normalized,
         contactNumber,
+        contacts,
         address,
         usualOrderGap,
         firstOrderDate

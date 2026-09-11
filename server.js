@@ -120,7 +120,7 @@ async function computeScotForDate(cutoffDate, monthInfo = null) {
       lastOrderAmount = Number(lastTx.amount) || 0;
     }
 
-    let daysSinceLastOrder = 9999;
+    let daysSinceLastOrder = null;
     let status = 'No Orders Yet';
 
     if (lastOrderDate) {
@@ -208,6 +208,7 @@ async function computeScotForDate(cutoffDate, monthInfo = null) {
       followUpStatus: monthFollowUpStatus,
       remark: monthRemark,
       // Master global fields preserved for backward compatibility
+      contacts: client.contacts || [],
       lastFollowUpDate: client.lastFollowUpDate || null,
       nextFollowUpDate: client.nextFollowUpDate || null,
       lastFeedback: client.lastFeedback || ''
@@ -280,9 +281,40 @@ app.get('/api/clients/:id', async (req, res) => {
 
 app.post('/api/clients', async (req, res) => {
   try {
-    const { clientName, contactNumber, address, usualOrderGap, firstOrderDate, uniqueId } = req.body;
-    if (!clientName) {
-      return res.status(400).json({ success: false, error: 'Client Name is required' });
+    const {
+      clientName,
+      contactNumber,
+      contacts,
+      address,
+      usualOrderGap,
+      firstOrderDate,
+      uniqueId,
+      nextFollowUpDate,
+      followUpTakenBy,
+      followUpStatus,
+      lastFeedback
+    } = req.body;
+
+    if (!clientName || !clientName.trim()) {
+      return res.status(400).json({ success: false, error: 'Company / Client Name is required' });
+    }
+
+    const trimmedName = clientName.trim();
+    const normalized = trimmedName.toLowerCase().replace(/\s+/g, ' ');
+
+    // Duplicate company validation (case-insensitive & extra-space insensitive)
+    const existingCompany = await Client.findOne({
+      $or: [
+        { normalizedName: normalized },
+        { clientName: { $regex: `^${trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } }
+      ]
+    });
+
+    if (existingCompany) {
+      return res.status(409).json({
+        success: false,
+        error: `Company "${trimmedName}" already exists in Master with ID ${existingCompany.uniqueId || existingCompany._id}. Duplicate companies are not allowed. Please edit the existing record or add contact persons to it.`
+      });
     }
 
     let uid = uniqueId;
@@ -291,18 +323,39 @@ app.post('/api/clients', async (req, res) => {
       uid = `Scot${String(count + 1).padStart(4, '0')}`;
     }
 
+    // Process contacts list
+    let parsedContacts = [];
+    if (Array.isArray(contacts)) {
+      parsedContacts = contacts.filter(c => c && (c.name || c.phone || c.email || c.designation));
+    } else if (contactNumber) {
+      parsedContacts.push({
+        name: 'Primary Contact',
+        designation: 'Contact Person',
+        phone: String(contactNumber).trim(),
+        email: '',
+        isPrimary: true
+      });
+    }
+
     const client = new Client({
       uniqueId: uid,
-      clientName: clientName.trim(),
-      contactNumber: (contactNumber || '').trim(),
+      clientName: trimmedName,
+      normalizedName: normalized,
+      contactNumber: (contactNumber || (parsedContacts[0]?.phone) || '').trim(),
+      contacts: parsedContacts,
       address: (address || '').trim(),
       usualOrderGap: Number(usualOrderGap) || 0,
-      firstOrderDate: firstOrderDate ? new Date(firstOrderDate) : null
+      firstOrderDate: firstOrderDate ? new Date(firstOrderDate) : null,
+      nextFollowUpDate: nextFollowUpDate ? new Date(nextFollowUpDate) : null,
+      followUpTakenBy: (followUpTakenBy || '').trim(),
+      followUpStatus: followUpStatus || 'Pending',
+      lastFeedback: (lastFeedback || '').trim()
     });
 
     await client.save();
     res.json({ success: true, client });
   } catch (err) {
+    console.error('Error creating client:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -312,6 +365,7 @@ app.put('/api/clients/:id', async (req, res) => {
     const {
       clientName,
       contactNumber,
+      contacts,
       address,
       usualOrderGap,
       firstOrderDate,
@@ -321,24 +375,58 @@ app.put('/api/clients/:id', async (req, res) => {
       lastFeedback
     } = req.body;
 
-    const updateData = {};
-    if (clientName !== undefined) updateData.clientName = clientName.trim();
-    if (contactNumber !== undefined) updateData.contactNumber = contactNumber.trim();
-    if (address !== undefined) updateData.address = address.trim();
-    if (usualOrderGap !== undefined) updateData.usualOrderGap = Number(usualOrderGap) || 0;
-    if (firstOrderDate !== undefined) updateData.firstOrderDate = firstOrderDate ? new Date(firstOrderDate) : null;
-    if (nextFollowUpDate !== undefined) updateData.nextFollowUpDate = nextFollowUpDate ? new Date(nextFollowUpDate) : null;
-    if (followUpTakenBy !== undefined) updateData.followUpTakenBy = followUpTakenBy.trim();
-    if (followUpStatus !== undefined) updateData.followUpStatus = followUpStatus;
-    if (lastFeedback !== undefined) updateData.lastFeedback = lastFeedback.trim();
+    const clientId = req.params.id;
+    const existing = await Client.findById(clientId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Client record not found' });
+    }
 
-    const client = await Client.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true }
-    );
-    res.json({ success: true, client });
+    // If clientName is changing, verify no other company already has that normalized name
+    if (clientName && clientName.trim() !== existing.clientName) {
+      const trimmedName = clientName.trim();
+      const normalized = trimmedName.toLowerCase().replace(/\s+/g, ' ');
+      const duplicate = await Client.findOne({
+        _id: { $ne: clientId },
+        $or: [
+          { normalizedName: normalized },
+          { clientName: { $regex: `^${trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } }
+        ]
+      });
+
+      if (duplicate) {
+        return res.status(409).json({
+          success: false,
+          error: `Another company named "${trimmedName}" already exists (ID: ${duplicate.uniqueId || duplicate._id}). Company names must be unique.`
+        });
+      }
+      existing.clientName = trimmedName;
+      existing.normalizedName = normalized;
+    }
+
+    if (address !== undefined) existing.address = address.trim();
+    if (usualOrderGap !== undefined) existing.usualOrderGap = Number(usualOrderGap) || 0;
+    if (firstOrderDate !== undefined) existing.firstOrderDate = firstOrderDate ? new Date(firstOrderDate) : null;
+    if (nextFollowUpDate !== undefined) existing.nextFollowUpDate = nextFollowUpDate ? new Date(nextFollowUpDate) : null;
+    if (followUpTakenBy !== undefined) existing.followUpTakenBy = followUpTakenBy.trim();
+    if (followUpStatus !== undefined) existing.followUpStatus = followUpStatus;
+    if (lastFeedback !== undefined) existing.lastFeedback = lastFeedback.trim();
+
+    // Update contacts list if provided
+    if (Array.isArray(contacts)) {
+      existing.contacts = contacts.filter(c => c && (c.name || c.phone || c.email || c.designation));
+      // Sync primary contact number
+      const primary = existing.contacts.find(c => c.isPrimary) || existing.contacts[0];
+      if (primary && primary.phone) {
+        existing.contactNumber = primary.phone;
+      }
+    } else if (contactNumber !== undefined) {
+      existing.contactNumber = contactNumber.trim();
+    }
+
+    await existing.save();
+    res.json({ success: true, client: existing });
   } catch (err) {
+    console.error('Error updating client:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -760,12 +848,12 @@ app.get('/api/scot-month/:monthKey', async (req, res) => {
     for (const r of scotRows) {
       totalSalesThisCutoff += r.totalSales;
 
-      if (r.daysSinceLastOrder >= 182) {
+      if (r.daysSinceLastOrder !== null && r.daysSinceLastOrder >= 182) {
         inactiveHalfYear++;
         lostSalesInactive += r.avgOrderSize;
       }
 
-      if (r.daysSinceLastOrder !== 9999 && r.usualOrderGap > 0) {
+      if (r.daysSinceLastOrder !== null && r.usualOrderGap > 0) {
         if (r.daysSinceLastOrder > r.usualOrderGap && r.daysSinceLastOrder < 182) {
           irregularClients++;
           lostSalesIrregular += r.avgOrderSize;
@@ -832,11 +920,11 @@ app.get('/api/monthly-loss-matrix', async (req, res) => {
 
       for (const r of scotRows) {
         totalSales += r.totalSales;
-        if (r.daysSinceLastOrder >= 182) {
+        if (r.daysSinceLastOrder !== null && r.daysSinceLastOrder >= 182) {
           inactiveHalfYear++;
           lostSalesInactive += r.avgOrderSize;
         }
-        if (r.daysSinceLastOrder !== 9999 && r.usualOrderGap > 0 && r.daysSinceLastOrder > r.usualOrderGap && r.daysSinceLastOrder < 182) {
+        if (r.daysSinceLastOrder !== null && r.usualOrderGap > 0 && r.daysSinceLastOrder > r.usualOrderGap && r.daysSinceLastOrder < 182) {
           irregularClients++;
           lostSalesIrregular += r.avgOrderSize;
         }
@@ -944,7 +1032,13 @@ app.post('/api/clients/import-excel', upload.single('file'), async (req, res) =>
       const uniqueId = uidCol !== -1 && row[uidCol] ? String(row[uidCol]).trim() : `Scot${String(clientTotal + addedCount + 1).padStart(4, '0')}`;
       const followUpTakenBy = creCol !== -1 && row[creCol] ? String(row[creCol]).trim() : '';
 
-      const existing = await Client.findOne({ clientName: { $regex: `^${clientName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } });
+      const normalized = clientName.toLowerCase().replace(/\s+/g, ' ');
+      const existing = await Client.findOne({
+        $or: [
+          { normalizedName: normalized },
+          { clientName: { $regex: `^${clientName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } }
+        ]
+      });
 
       if (existing) {
         if (contactNumber && !existing.contactNumber) existing.contactNumber = contactNumber;
@@ -952,13 +1046,38 @@ app.post('/api/clients/import-excel', upload.single('file'), async (req, res) =>
         if (usualOrderGap && !existing.usualOrderGap) existing.usualOrderGap = usualOrderGap;
         if (firstOrderDate && !existing.firstOrderDate) existing.firstOrderDate = firstOrderDate;
         if (followUpTakenBy && !existing.followUpTakenBy) existing.followUpTakenBy = followUpTakenBy;
+        
+        // If this contact number isn't in company's contacts list, append it
+        if (contactNumber && Array.isArray(existing.contacts)) {
+          const hasPhone = existing.contacts.some(c => c.phone === contactNumber);
+          if (!hasPhone) {
+            existing.contacts.push({
+              name: 'Staff Contact',
+              designation: 'Staff',
+              phone: contactNumber,
+              email: ''
+            });
+          }
+        }
         await existing.save();
         updatedCount++;
       } else {
+        const initialContacts = [];
+        if (contactNumber) {
+          initialContacts.push({
+            name: 'Primary Contact',
+            designation: 'Contact Person',
+            phone: contactNumber,
+            email: '',
+            isPrimary: true
+          });
+        }
         await Client.create({
           uniqueId,
           clientName,
+          normalizedName: normalized,
           contactNumber,
+          contacts: initialContacts,
           address,
           usualOrderGap,
           firstOrderDate,

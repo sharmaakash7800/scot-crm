@@ -133,23 +133,34 @@ async function loadDashboard() {
     // Render Priority Table (Clients requiring urgent attention)
     const records = dataMonth.records || [];
     const priorityList = records
-      .filter(r => r.status.includes('Inactive') || r.status.includes('At Risk') || (r.usualOrderGap > 0 && r.daysSinceLastOrder > r.usualOrderGap))
+      .filter(r => r.status.includes('Inactive') || r.status.includes('At Risk') || (r.daysSinceLastOrder !== null && r.usualOrderGap > 0 && r.daysSinceLastOrder > r.usualOrderGap))
       .slice(0, 10);
 
     const tbody = document.querySelector('#dashboardPriorityTable tbody');
     if (priorityList.length === 0) {
       tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No urgent follow-ups for this period.</td></tr>';
     } else {
-      tbody.innerHTML = priorityList.map(r => `
-        <tr>
-          <td><strong>${r.clientName}</strong></td>
-          <td>${r.contactNumber || '-'}</td>
-          <td><span style="font-weight: 600; color: ${r.daysSinceLastOrder >= 182 ? '#fb7185' : '#fbbf24'}">${r.daysSinceLastOrder === 9999 ? 'Never' : r.daysSinceLastOrder + ' days'}</span></td>
-          <td>${formatDate(r.lastOrderDate)}</td>
-          <td>${formatCurrency(r.lastOrderAmount)}</td>
-          <td>${getStatusBadge(r.status)}</td>
-        </tr>
-      `).join('');
+      tbody.innerHTML = priorityList.map(r => {
+        let daysDisplay = '—';
+        let daysColor = 'var(--text-muted)';
+        if (r.daysSinceLastOrder !== null && r.daysSinceLastOrder !== undefined) {
+          daysDisplay = `${r.daysSinceLastOrder} days`;
+          daysColor = r.daysSinceLastOrder >= 182 ? '#fb7185' : '#fbbf24';
+        } else {
+          daysDisplay = 'No Orders';
+        }
+
+        return `
+          <tr>
+            <td><strong>${r.clientName}</strong></td>
+            <td>${r.contactNumber || '-'}</td>
+            <td><span style="font-weight: 600; color: ${daysColor}">${daysDisplay}</span></td>
+            <td>${formatDate(r.lastOrderDate)}</td>
+            <td>${formatCurrency(r.lastOrderAmount)}</td>
+            <td>${getStatusBadge(r.status)}</td>
+          </tr>
+        `;
+      }).join('');
     }
 
     // Health Chart Doughnut
@@ -587,10 +598,16 @@ function renderScotTable(records) {
 
     // Days Since styling with semantic aging emphasis
     let daysStyle = 'font-weight: 600;';
-    if (r.daysSinceLastOrder >= 182) {
-      daysStyle += ' color: var(--accent-rose);';
-    } else if (r.daysSinceLastOrder > 90) {
-      daysStyle += ' color: var(--accent-amber);';
+    let daysDisplay = '—';
+    if (r.daysSinceLastOrder !== null && r.daysSinceLastOrder !== undefined) {
+      daysDisplay = r.daysSinceLastOrder;
+      if (r.daysSinceLastOrder >= 182) {
+        daysStyle += ' color: var(--accent-rose);';
+      } else if (r.daysSinceLastOrder > 90) {
+        daysStyle += ' color: var(--accent-amber);';
+      }
+    } else {
+      daysDisplay = '<span style="color: var(--text-muted); font-size: 0.78rem;">No Order</span>';
     }
 
     // Safe escaped strings for inline actions
@@ -614,7 +631,7 @@ function renderScotTable(records) {
           </a>
         </td>
         <td style="color: var(--text-secondary);">${r.contactNumber || '-'}</td>
-        <td class="col-numeric"><span style="${daysStyle}">${r.daysSinceLastOrder === 9999 ? '9999' : r.daysSinceLastOrder}</span></td>
+        <td class="col-numeric"><span style="${daysStyle}">${daysDisplay}</span></td>
         <td style="color: var(--text-secondary);">${formatDate(r.lastOrderDate)}</td>
         <td class="col-numeric"><strong>${formatCurrency(r.totalSales)}</strong></td>
         <td>${getStatusBadge(r.status)}</td>
@@ -926,8 +943,29 @@ document.getElementById('txForm')?.addEventListener('submit', async (e) => {
   }
 });
 
+// Helper to render a contact row in Client Modal
+function addClientModalContactRow(c = { name: '', designation: '', phone: '', email: '' }) {
+  const container = document.getElementById('clientModalContactsContainer');
+  if (!container) return;
+  const rowId = 'cmContact_' + Math.random().toString(36).substr(2, 9);
+  const div = document.createElement('div');
+  div.id = rowId;
+  div.style.cssText = 'display: grid; grid-template-columns: 1.2fr 1.2fr 1.1fr 1.1fr 32px; gap: 8px; align-items: center; background: rgba(255,255,255,0.03); padding: 6px 8px; border-radius: var(--radius-sm);';
+  div.innerHTML = `
+    <input type="text" class="form-control cm-contact-name" placeholder="Name (e.g. Rahul)" value="${c.name || ''}" style="font-size: 0.8rem; padding: 4px 8px; height: 32px;">
+    <input type="text" class="form-control cm-contact-desig" placeholder="Designation (e.g. Purchase Mgr)" value="${c.designation || ''}" style="font-size: 0.8rem; padding: 4px 8px; height: 32px;">
+    <input type="text" class="form-control cm-contact-phone" placeholder="Phone (e.g. 98xxx)" value="${c.phone || ''}" style="font-size: 0.8rem; padding: 4px 8px; height: 32px;">
+    <input type="email" class="form-control cm-contact-email" placeholder="Email (optional)" value="${c.email || ''}" style="font-size: 0.8rem; padding: 4px 8px; height: 32px;">
+    <button type="button" class="btn btn-secondary btn-action-sm" onclick="document.getElementById('${rowId}').remove()" style="color: #fb7185; padding: 2px 6px; height: 32px; line-height: 1;" title="Remove Person">✕</button>
+  `;
+  container.appendChild(div);
+}
+
 function openClientModal(client = null) {
   populateAllExecutiveDropdowns();
+  const container = document.getElementById('clientModalContactsContainer');
+  if (container) container.innerHTML = '';
+
   if (client) {
     document.getElementById('clientModalTitle').innerText = '✏️ Edit Client Details';
     document.getElementById('clientEditId').value = client._id;
@@ -940,11 +978,19 @@ function openClientModal(client = null) {
     document.getElementById('clientNextFollowUpDate').value = client.nextFollowUpDate ? client.nextFollowUpDate.split('T')[0] : '';
     document.getElementById('clientFollowUpTakenBy').value = client.followUpTakenBy || '';
     document.getElementById('clientLastFeedback').value = client.lastFeedback || '';
+
+    // Render contacts
+    if (Array.isArray(client.contacts) && client.contacts.length > 0) {
+      client.contacts.forEach(c => addClientModalContactRow(c));
+    } else if (client.contactNumber) {
+      addClientModalContactRow({ name: 'Primary Contact', designation: 'Contact Person', phone: client.contactNumber });
+    }
   } else {
     document.getElementById('clientModalTitle').innerText = 'Add New Client';
     document.getElementById('clientEditId').value = '';
     document.getElementById('clientForm').reset();
     document.getElementById('clientFollowUpTakenBy').value = '';
+    addClientModalContactRow({ name: '', designation: '', phone: '' });
   }
   document.getElementById('clientModal').classList.add('active');
 }
@@ -990,16 +1036,33 @@ async function deleteTransaction(id) {
 document.getElementById('clientForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const id = document.getElementById('clientEditId').value;
+
+  // Extract contact list
+  const contactRows = document.querySelectorAll('#clientModalContactsContainer > div');
+  const contacts = [];
+  contactRows.forEach(row => {
+    const name = row.querySelector('.cm-contact-name')?.value.trim();
+    const desig = row.querySelector('.cm-contact-desig')?.value.trim();
+    const phone = row.querySelector('.cm-contact-phone')?.value.trim();
+    const email = row.querySelector('.cm-contact-email')?.value.trim();
+    if (name || phone || email || desig) {
+      contacts.push({ name, designation: desig, phone, email });
+    }
+  });
+
+  const primaryContact = document.getElementById('clientContact').value.trim() || (contacts[0]?.phone || '');
+
   const body = {
-    clientName: document.getElementById('clientName').value,
-    contactNumber: document.getElementById('clientContact').value,
-    address: document.getElementById('clientAddress').value,
+    clientName: document.getElementById('clientName').value.trim(),
+    contactNumber: primaryContact,
+    contacts,
+    address: document.getElementById('clientAddress').value.trim(),
     usualOrderGap: document.getElementById('clientUsualGap').value,
     firstOrderDate: document.getElementById('clientFirstOrderDate').value,
     followUpStatus: document.getElementById('clientFollowUpStatus').value,
     nextFollowUpDate: document.getElementById('clientNextFollowUpDate').value,
     followUpTakenBy: document.getElementById('clientFollowUpTakenBy').value,
-    lastFeedback: document.getElementById('clientLastFeedback').value
+    lastFeedback: document.getElementById('clientLastFeedback').value.trim()
   };
 
   const url = id ? `/api/clients/${id}` : '/api/clients';
@@ -2247,6 +2310,24 @@ document.getElementById('reassignForm')?.addEventListener('submit', async (e) =>
   }
 });
 
+// Helper to render a contact row in Drawer
+function addDrawerContactRow(c = { name: '', designation: '', phone: '', email: '' }) {
+  const container = document.getElementById('drawerContactsContainer');
+  if (!container) return;
+  const rowId = 'drawerContact_' + Math.random().toString(36).substr(2, 9);
+  const div = document.createElement('div');
+  div.id = rowId;
+  div.style.cssText = 'display: grid; grid-template-columns: 1.2fr 1.2fr 1.1fr 1.1fr 32px; gap: 8px; align-items: center; background: rgba(255,255,255,0.03); padding: 6px 8px; border-radius: var(--radius-sm);';
+  div.innerHTML = `
+    <input type="text" class="form-control dr-contact-name" placeholder="Name" value="${c.name || ''}" style="font-size: 0.8rem; padding: 4px 8px; height: 32px;">
+    <input type="text" class="form-control dr-contact-desig" placeholder="Designation" value="${c.designation || ''}" style="font-size: 0.8rem; padding: 4px 8px; height: 32px;">
+    <input type="text" class="form-control dr-contact-phone" placeholder="Phone" value="${c.phone || ''}" style="font-size: 0.8rem; padding: 4px 8px; height: 32px;">
+    <input type="email" class="form-control dr-contact-email" placeholder="Email" value="${c.email || ''}" style="font-size: 0.8rem; padding: 4px 8px; height: 32px;">
+    <button type="button" class="btn btn-secondary btn-action-sm" onclick="document.getElementById('${rowId}').remove()" style="color: #fb7185; padding: 2px 6px; height: 32px; line-height: 1;" title="Remove Person">✕</button>
+  `;
+  container.appendChild(div);
+}
+
 // ==================== EDIT CLIENT DRAWER ==================== //
 async function openEditDrawer(clientId) {
   const r = currentScotRecords.find(item => item._id === clientId);
@@ -2258,8 +2339,25 @@ async function openEditDrawer(clientId) {
   document.getElementById('drawerAddress').value = r.address || '';
   document.getElementById('drawerUsualGap').value = r.usualOrderGap || 0;
 
+  // Render contacts in drawer
+  const container = document.getElementById('drawerContactsContainer');
+  if (container) {
+    container.innerHTML = '';
+    if (Array.isArray(r.contacts) && r.contacts.length > 0) {
+      r.contacts.forEach(c => addDrawerContactRow(c));
+    } else if (r.contactNumber) {
+      addDrawerContactRow({ name: 'Primary Contact', designation: 'Contact Person', phone: r.contactNumber });
+    }
+  }
+
   // Read-only stat displays
-  document.getElementById('drawerDaysSince').innerText = r.daysSinceLastOrder === 9999 ? '9999' : r.daysSinceLastOrder;
+  let daysDisplay = '—';
+  if (r.daysSinceLastOrder !== null && r.daysSinceLastOrder !== undefined) {
+    daysDisplay = `${r.daysSinceLastOrder} days`;
+  } else {
+    daysDisplay = 'No Orders';
+  }
+  document.getElementById('drawerDaysSince').innerText = daysDisplay;
   document.getElementById('drawerTotalSales').innerText = formatCurrency(r.totalSales);
   document.getElementById('drawerInvoices').innerText = r.totalInvoices;
   document.getElementById('drawerHealthBadge').innerHTML = getStatusBadge(r.status);
@@ -2293,7 +2391,6 @@ document.getElementById('editClientForm')?.addEventListener('submit', async (e) 
   e.preventDefault();
   const clientId = document.getElementById('drawerClientId').value;
   const clientName = document.getElementById('drawerClientName').value.trim();
-  const contactNumber = document.getElementById('drawerContactNumber').value.trim();
   const address = document.getElementById('drawerAddress').value.trim();
   const usualOrderGap = Number(document.getElementById('drawerUsualGap').value) || 0;
   const followUpTakenBy = document.getElementById('drawerFollowUpBy').value;
@@ -2302,18 +2399,39 @@ document.getElementById('editClientForm')?.addEventListener('submit', async (e) 
   const actualDate = document.getElementById('drawerActualDate').value;
   const remark = document.getElementById('drawerRemark').value.trim();
 
+  // Extract contacts from drawer
+  const contactRows = document.querySelectorAll('#drawerContactsContainer > div');
+  const contacts = [];
+  contactRows.forEach(row => {
+    const name = row.querySelector('.dr-contact-name')?.value.trim();
+    const desig = row.querySelector('.dr-contact-desig')?.value.trim();
+    const phone = row.querySelector('.dr-contact-phone')?.value.trim();
+    const email = row.querySelector('.dr-contact-email')?.value.trim();
+    if (name || phone || email || desig) {
+      contacts.push({ name, designation: desig, phone, email });
+    }
+  });
+
+  const contactNumber = document.getElementById('drawerContactNumber').value.trim() || (contacts[0]?.phone || '');
+
   try {
     // 1. Update Client Core Details
-    await fetch(`/api/clients/${clientId}`, {
+    const clientRes = await fetch(`/api/clients/${clientId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         clientName,
         contactNumber,
+        contacts,
         address,
         usualOrderGap
       })
     });
+    const clientData = await clientRes.json();
+    if (!clientRes.ok || !clientData.success) {
+      alert('Failed to save company details: ' + (clientData.error || 'Unknown error'));
+      return;
+    }
 
     // 2. Update Month-specific Follow-up Details
     const fuRes = await fetch(`/api/clients/${clientId}/followup`, {
@@ -2326,30 +2444,32 @@ document.getElementById('editClientForm')?.addEventListener('submit', async (e) 
         lastFeedback: remark
       })
     });
-
-    if (fuRes.ok) {
-      closeEditDrawer();
-      showToast(`Updated "${clientName}" successfully!`);
-
-      // Update in-memory record so entire page does not reload
-      const localRec = currentScotRecords.find(item => item._id === clientId);
-      if (localRec) {
-        localRec.clientName = clientName;
-        localRec.contactNumber = contactNumber;
-        localRec.address = address;
-        localRec.usualOrderGap = usualOrderGap;
-        localRec.followUpTakenBy = followUpTakenBy;
-        localRec.followUpStatus = followUpStatus;
-        localRec.plannedDate = plannedDate || null;
-        localRec.actualDate = actualDate || (followUpStatus === 'Taken / Done' ? new Date().toISOString() : null);
-        localRec.remark = remark;
-      }
-      updateScotSummaryPills(currentScotRecords);
-      applyScotFiltersAndRender();
-      loadTodayFollowUpAgenda();
-    } else {
-      alert('Failed to save client details');
+    const fuData = await fuRes.json();
+    if (!fuRes.ok || !fuData.success) {
+      alert('Failed to update follow-up: ' + (fuData.error || 'Unknown error'));
+      return;
     }
+
+    closeEditDrawer();
+    showToast(`Updated "${clientName}" successfully!`);
+
+    // Update in-memory record so entire page reflects instantly
+    const localRec = currentScotRecords.find(item => item._id === clientId);
+    if (localRec) {
+      localRec.clientName = clientName;
+      localRec.contactNumber = contactNumber;
+      localRec.contacts = contacts;
+      localRec.address = address;
+      localRec.usualOrderGap = usualOrderGap;
+      localRec.followUpTakenBy = followUpTakenBy;
+      localRec.followUpStatus = followUpStatus;
+      localRec.plannedDate = plannedDate || null;
+      localRec.actualDate = actualDate || (followUpStatus === 'Taken / Done' ? new Date().toISOString() : null);
+      localRec.remark = remark;
+    }
+    updateScotSummaryPills(currentScotRecords);
+    applyScotFiltersAndRender();
+    loadTodayFollowUpAgenda();
   } catch (err) {
     alert('Error saving client: ' + err.message);
   }
@@ -2370,6 +2490,34 @@ function openClientOverviewDrawer(clientId) {
   else if (fuState === 'Overdue') fuBadge = '<span class="badge badge-inactive"><span class="badge-dot">●</span> Overdue</span>';
   else if (fuState === 'Planned') fuBadge = '<span class="badge badge-risk"><span class="badge-dot">●</span> Planned</span>';
 
+  let daysDisplay = '—';
+  if (r.daysSinceLastOrder !== null && r.daysSinceLastOrder !== undefined) {
+    daysDisplay = `${r.daysSinceLastOrder} days`;
+  } else {
+    daysDisplay = 'No Orders';
+  }
+
+  // Generate contacts list preview
+  let contactsHtml = '';
+  if (Array.isArray(r.contacts) && r.contacts.length > 0) {
+    contactsHtml = `
+      <div class="drawer-section-title" style="margin-top: 14px;">Company Contacts & Team (${r.contacts.length})</div>
+      <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px;">
+        ${r.contacts.map(c => `
+          <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); font-size: 0.82rem;">
+            <div>
+              <strong>${c.name || 'Staff'}</strong>
+              <span style="color: var(--text-muted); margin-left: 6px; font-size: 0.76rem;">${c.designation || ''}</span>
+            </div>
+            <div style="color: var(--accent-cyan); font-weight: 500;">
+              ${c.phone ? `📞 ${c.phone}` : ''} ${c.email ? `✉️ ${c.email}` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
   const container = document.getElementById('overviewDrawerContent');
   container.innerHTML = `
     <!-- Top Stats -->
@@ -2384,7 +2532,7 @@ function openClientOverviewDrawer(clientId) {
       </div>
       <div class="drawer-stat">
         <span class="drawer-stat-label">Days Since</span>
-        <strong class="drawer-stat-val">${r.daysSinceLastOrder === 9999 ? '9999' : r.daysSinceLastOrder}</strong>
+        <strong class="drawer-stat-val">${daysDisplay}</strong>
       </div>
     </div>
 
@@ -2408,6 +2556,8 @@ function openClientOverviewDrawer(clientId) {
         <div style="font-size: 0.88rem; margin-top: 4px;">${r.usualOrderGap || 0} days</div>
       </div>
     </div>
+
+    ${contactsHtml}
 
     <!-- Section 2: Follow-up & Accountability -->
     <div class="drawer-section-title">Follow-up & CRE Accountability</div>

@@ -840,9 +840,21 @@ git push -u origin main</pre>
           <input type="text" class="form-control" id="clientName" required placeholder="e.g. Ankit Electricals">
         </div>
         <div class="form-group">
-          <label class="form-label">Contact Number</label>
+          <label class="form-label">Primary Contact Number</label>
           <input type="text" class="form-control" id="clientContact" placeholder="e.g. 9829461116">
         </div>
+
+        <!-- Multiple Company Employees / Contacts Table -->
+        <div class="form-group" style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <label class="form-label" style="margin: 0; font-size: 0.84rem; font-weight: 700; color: var(--accent-cyan);">👥 Company Contacts & Employees</label>
+            <button type="button" class="btn btn-secondary btn-action-sm" onclick="addClientModalContactRow()" style="font-size: 0.75rem; padding: 3px 8px;">+ Add Contact Person</button>
+          </div>
+          <div id="clientModalContactsContainer" style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+
         <div class="form-group">
           <label class="form-label">Address / Details</label>
           <textarea class="form-control" id="clientAddress" rows="2" placeholder="Full address"></textarea>
@@ -1148,12 +1160,23 @@ git push -u origin main</pre>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div class="form-group">
-            <label class="form-label" for="drawerContactNumber">Contact Number</label>
+            <label class="form-label" for="drawerContactNumber">Primary Contact Number</label>
             <input type="text" class="form-control" id="drawerContactNumber" placeholder="e.g. 9829461116">
           </div>
           <div class="form-group">
             <label class="form-label" for="drawerUsualGap">Usual Order Gap (Days)</label>
             <input type="number" class="form-control" id="drawerUsualGap" min="0">
+          </div>
+        </div>
+
+        <!-- Multiple Company Employees / Contacts Section -->
+        <div class="form-group" style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <label class="form-label" style="margin: 0; font-size: 0.84rem; font-weight: 700; color: var(--accent-cyan);">👥 Company Contacts & Employees</label>
+            <button type="button" class="btn btn-secondary btn-action-sm" onclick="addDrawerContactRow()" style="font-size: 0.75rem; padding: 3px 8px;">+ Add Person</button>
+          </div>
+          <div id="drawerContactsContainer" style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Rendered dynamically -->
           </div>
         </div>
 
