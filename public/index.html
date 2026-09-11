@@ -16,8 +16,9 @@
 </head>
 <body>
 
-  <!-- Sidebar -->
-  <aside class="sidebar">
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
     <div class="brand-logo">
       <div class="brand-icon">S</div>
       <div class="brand-text">
@@ -551,16 +552,16 @@
           <table class="data-table scot-compact-table" id="scotSheetTable">
             <thead>
               <tr>
-                <th style="width: 44px; text-align: center;" title="Expand Row Details"></th>
-                <th class="col-client" style="min-width: 220px;">Client Name</th>
-                <th style="width: 130px;">Contact</th>
-                <th class="col-numeric" style="width: 90px;" title="Days Since Last Order">Days</th>
-                <th style="width: 120px;">Last Order</th>
-                <th class="col-numeric" style="width: 130px;">Sales</th>
-                <th style="width: 140px;">Client Status</th>
-                <th style="width: 140px;">Follow-up By</th>
-                <th style="width: 130px;">Follow-up Status</th>
-                <th style="width: 120px; text-align: center;">Actions</th>
+                <th style="width: 40px; text-align: center;" title="Expand Row Details"></th>
+                <th class="col-client" style="min-width: 180px;">Client Name</th>
+                <th style="min-width: 115px;">Contact</th>
+                <th class="col-numeric" style="min-width: 75px;" title="Days Since Last Order">Days</th>
+                <th style="min-width: 105px;">Last Order</th>
+                <th class="col-numeric" style="min-width: 110px;">Sales</th>
+                <th style="min-width: 135px;">Client Status</th>
+                <th style="min-width: 125px;">Follow-up By</th>
+                <th style="min-width: 120px;">Follow-up Status</th>
+                <th style="min-width: 145px; text-align: center;">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -787,6 +788,7 @@ git push -u origin main</pre>
     </section>
 
   </main>
+  </div><!-- /.app-layout -->
 
   <!-- Modal: Add / Edit Transaction -->
   <div class="modal-overlay" id="txModal">

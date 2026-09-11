@@ -1982,9 +1982,27 @@ async function loadExecutivesList() {
     const data = await res.json();
     allExecutivesList = data.executives || [];
     renderExecutivesModalTable();
+    populateScotExecutiveFilter();
+    populateAgendaExecutiveDropdown();
   } catch (err) {
     console.error('Error loading executives:', err);
   }
+}
+
+// Dynamically refresh Agenda Executive dropdown from allExecutivesList
+function populateAgendaExecutiveDropdown() {
+  const elExecSelect = document.getElementById('agendaResponsiblePerson');
+  if (!elExecSelect) return;
+  const currentVal = agendaFilterState.executive || 'all';
+  elExecSelect.innerHTML = '<option value="all">Responsible Person: All</option>';
+  allExecutivesList.forEach(ex => {
+    if (!ex.name) return;
+    const opt = document.createElement('option');
+    opt.value = ex.name;
+    opt.innerText = ex.name + (!ex.isActive ? ' (Inactive)' : '');
+    elExecSelect.appendChild(opt);
+  });
+  elExecSelect.value = currentVal;
 }
 
 function openCREManagementModal() {
@@ -2060,7 +2078,7 @@ document.getElementById('addExecutiveForm')?.addEventListener('submit', async (e
     if (data.success) {
       document.getElementById('addExecutiveForm').reset();
       showToast(`Added ${name} as CRE / Doer`);
-      loadExecutivesList();
+      await loadExecutivesList();
     } else {
       alert(data.error || 'Failed to add CRE');
     }
@@ -2080,7 +2098,7 @@ async function toggleExecutiveStatus(id, newStatus) {
     const data = await res.json();
     if (data.success) {
       showToast(`CRE status updated to ${newStatus ? 'Active' : 'Inactive'}`);
-      loadExecutivesList();
+      await loadExecutivesList();
     }
   } catch (err) {
     alert('Error updating status: ' + err.message);
@@ -2103,9 +2121,8 @@ async function deleteExecutive(id, name, assignedCount) {
     const res = await fetch(`/api/executives/${id}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.success) {
-      showToast(`CRE "${name}" successfully delete ho gaya!`);
-      loadExecutivesList();
-      populateScotExecutiveFilter();
+      showToast(`CRE "${name}" successfully removed!`);
+      await loadExecutivesList();
     } else {
       alert(data.error || 'Failed to delete CRE');
     }
@@ -2449,6 +2466,7 @@ window.addEventListener('DOMContentLoaded', () => {
   initSidebar();
   initAgendaControls();
   initScotTableControls();
+  loadExecutivesList();
   loadDashboard();
 });
 

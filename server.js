@@ -536,7 +536,7 @@ app.get('/api/followups/today', async (req, res) => {
       }),
       FollowUp.countDocuments({ isCompleted: true }),
       FollowUp.countDocuments({}),
-      FollowUp.distinct('creName')
+      Executive.distinct('name', { isActive: true })
     ]);
 
     // Build specific query for the agenda list based on filters
