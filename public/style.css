@@ -95,40 +95,125 @@ body {
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  padding: 24px 14px;
+  padding: 20px 14px 16px;
   position: fixed;
   top: 0;
   bottom: 0;
   left: 0;
-  z-index: 50;
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease;
+  z-index: 90;
+  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.25);
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease;
+  overflow: hidden;
+}
+
+/* Sidebar Hover & Collapsed States */
+body.sidebar-collapsed .sidebar {
+  width: 72px;
+}
+
+body.sidebar-collapsed .sidebar .brand-text,
+body.sidebar-collapsed .sidebar .nav-link span:not(.nav-icon),
+body.sidebar-collapsed .sidebar .theme-info,
+body.sidebar-collapsed .sidebar .db-status-badge div {
+  opacity: 0;
+  pointer-events: none;
+  display: none;
+}
+
+body.sidebar-collapsed .sidebar .brand-logo {
+  justify-content: center;
+  padding: 0 0 16px;
+}
+
+body.sidebar-collapsed .sidebar .nav-link {
+  justify-content: center;
+  padding: 12px;
+}
+
+body.sidebar-collapsed .sidebar .db-status-badge,
+body.sidebar-collapsed .sidebar .theme-switch-item {
+  justify-content: center;
+  padding: 10px;
+}
+
+/* On hover over collapsed sidebar: expand smoothly over content */
+body.sidebar-collapsed .sidebar:hover {
+  width: 250px;
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.45);
+}
+
+body.sidebar-collapsed .sidebar:hover .brand-text,
+body.sidebar-collapsed .sidebar:hover .nav-link span:not(.nav-icon),
+body.sidebar-collapsed .sidebar:hover .theme-info,
+body.sidebar-collapsed .sidebar:hover .db-status-badge div {
+  opacity: 1;
+  pointer-events: auto;
+  display: block;
+}
+
+body.sidebar-collapsed .sidebar:hover .brand-logo {
+  justify-content: flex-start;
+  padding: 0 10px 16px;
+}
+
+body.sidebar-collapsed .sidebar:hover .nav-link {
+  justify-content: flex-start;
+  padding: 10px 14px;
+}
+
+body.sidebar-collapsed .sidebar:hover .db-status-badge,
+body.sidebar-collapsed .sidebar:hover .theme-switch-item {
+  justify-content: flex-start;
+  padding: 10px 12px;
+}
+
+/* Backdrop for clicking outside to close */
+.sidebar-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  z-index: 85;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+body.sidebar-open .sidebar-backdrop {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .brand-logo {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 10px 20px;
+  padding: 0 8px 16px;
   border-bottom: 1px solid var(--border-color);
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  cursor: pointer;
 }
 
 .brand-icon {
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
   background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 800;
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   color: #fff;
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
 
 .brand-text h2 {
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-primary);
@@ -136,7 +221,7 @@ body {
 }
 
 .brand-text span {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--accent-cyan);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -149,6 +234,8 @@ body {
   flex-direction: column;
   gap: 4px;
   flex: 1;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .nav-link {
@@ -164,6 +251,7 @@ body {
   cursor: pointer;
   transition: var(--transition-fast);
   border: 1px solid transparent;
+  white-space: nowrap;
 }
 
 .nav-link:hover {
@@ -188,6 +276,55 @@ body {
   font-size: 1.1rem;
   display: flex;
   align-items: center;
+  justify-content: center;
+  min-width: 24px;
+}
+
+/* Sidebar Footer (Theme Mode Toggle + DB Status) */
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+}
+
+.theme-switch-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: var(--transition-fast);
+  user-select: none;
+}
+
+.theme-switch-item:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-glow);
+}
+
+.theme-icon {
+  font-size: 1.15rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+}
+
+.theme-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.theme-info strong {
+  font-size: 0.82rem;
+  color: var(--text-primary);
 }
 
 .db-status-badge {
@@ -211,6 +348,7 @@ body {
   border-radius: 50%;
   background-color: var(--accent-emerald);
   box-shadow: 0 0 8px var(--accent-emerald);
+  flex-shrink: 0;
 }
 
 /* ==================== MAIN CONTENT AREA ==================== */
@@ -220,6 +358,31 @@ body {
   padding: 24px 32px 48px;
   min-height: 100vh;
   transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+body.sidebar-collapsed .main-wrapper {
+  margin-left: 72px;
+}
+
+/* Sidebar Toggle Hamburger Button in Top Header */
+.sidebar-toggle-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-glow);
+  color: var(--accent-primary);
 }
 
 /* Top Header Bar (Sticky Non-scrolling Application Header) */
@@ -670,6 +833,64 @@ body {
   .agenda-counters-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* ==================== AGENDA FOLLOW-UP CARDS ==================== */
+.agenda-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+  margin-bottom: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  transition: var(--transition-fast);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.agenda-card:hover {
+  background: var(--bg-card-hover);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+  transform: translateY(-1px);
+}
+
+.agenda-info h4 {
+  font-size: 1.12rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.agenda-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.agenda-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.agenda-feedback-box {
+  background: rgba(0, 0, 0, 0.22);
+  border-left: 3px solid var(--accent-cyan);
+  padding: 8px 14px;
+  border-radius: 4px;
+  font-size: 0.84rem;
+  color: var(--text-primary);
+  margin-top: 8px;
+}
+
+[data-theme="light"] .agenda-feedback-box {
+  background: #f1f5f9;
+  border-left-color: var(--accent-primary);
 }
 
 /* ==================== KPI CARDS GRID ==================== */
@@ -1327,40 +1548,7 @@ select.form-control option {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ==================== SIDEBAR AUTO-COLLAPSE & BACKDROP ==================== */
-body.sidebar-collapsed .sidebar {
-  transform: translateX(-100%);
-  opacity: 0;
-  pointer-events: none;
-}
 
-body.sidebar-collapsed .main-wrapper {
-  margin-left: 0 !important;
-  max-width: 100% !important;
-  padding: 24px 36px 48px;
-}
-
-.sidebar-backdrop {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-  z-index: 40;
-}
-
-body:not(.sidebar-collapsed) .sidebar-backdrop {
-  display: block;
-}
-
-@media (min-width: 1200px) {
-  body:not(.sidebar-collapsed) .sidebar-backdrop {
-    display: none;
-  }
-}
 
 /* ==================== RESPONSIVE BREAKPOINTS ==================== */
 /* Desktop (1366px - 1920px): Clean breathing room, sticky table headers */

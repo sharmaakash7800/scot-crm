@@ -1302,6 +1302,74 @@ async function start() {
       }
     }
 
+    // Auto-seed actionable Follow-up tasks for Today/Overdue/Tomorrow if FollowUp collection is empty
+    const fuCount = await FollowUp.countDocuments();
+    if (fuCount === 0) {
+      console.log('📞 Seeding initial actionable Follow-up Agenda tasks for CRE...');
+      const sampleClients = await Client.find({ contactNumber: { $ne: '' } }).limit(25).lean();
+      const defaultCREs = ['Priya Patel', 'Rajesh Sharma', 'Amit Verma', 'Sunil Kumar'];
+      const now = new Date();
+
+      const seedFollowUps = sampleClients.map((c, idx) => {
+        const assignedCRE = defaultCREs[idx % defaultCREs.length];
+        // Spread dates: first 8 are Today, next 5 Overdue (yesterday), next 5 Tomorrow, rest general
+        const targetDate = new Date(now);
+        let feedback = 'Follow up regarding repeat order and catalog updates';
+        let sentiment = 'Neutral';
+
+        if (idx < 8) {
+          // Today
+          targetDate.setHours(10 + (idx % 6), 0, 0, 0);
+          feedback = 'Customer requested call today to finalize order quantity';
+          sentiment = 'Positive';
+        } else if (idx < 14) {
+          // Overdue (1 to 2 days ago)
+          targetDate.setDate(targetDate.getDate() - (1 + (idx % 2)));
+          targetDate.setHours(11, 0, 0, 0);
+          feedback = 'Pending discussion on pricing discount and payment terms';
+          sentiment = 'Neutral';
+        } else if (idx < 20) {
+          // Tomorrow
+          targetDate.setDate(targetDate.getDate() + 1);
+          targetDate.setHours(14, 0, 0, 0);
+          feedback = 'Promised order next day after stock check with warehouse';
+          sentiment = 'Positive';
+        } else {
+          targetDate.setDate(targetDate.getDate() + 3);
+          feedback = 'Routine quarterly review and catalogue dispatch';
+          sentiment = 'Neutral';
+        }
+
+        return {
+          clientId: c._id,
+          clientName: c.clientName,
+          contactNumber: c.contactNumber || '9829461116',
+          callDate: new Date(),
+          creName: assignedCRE,
+          callStatus: 'Connected',
+          customerFeedback: feedback,
+          nextFollowUpDate: targetDate,
+          orderExpectedAmount: 25000 + (idx * 5000),
+          sentiment,
+          isCompleted: false
+        };
+      });
+
+      if (seedFollowUps.length > 0) {
+        await FollowUp.insertMany(seedFollowUps);
+        console.log(`✅ Auto-seeded ${seedFollowUps.length} actionable follow-ups for Today's CRM Agenda.`);
+      }
+
+      // Also ensure executives are created
+      for (const name of defaultCREs) {
+        await Executive.findOneAndUpdate(
+          { name },
+          { name, role: 'CRE / Doer', isActive: true },
+          { upsert: true }
+        );
+      }
+    }
+
     app.listen(PORT, () => {
       console.log(`🚀 SCOT Sales & Analytics Server running at: http://localhost:${PORT}`);
     });

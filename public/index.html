@@ -83,11 +83,22 @@
       </li>
     </ul>
 
-    <div class="db-status-badge">
-      <div class="status-dot"></div>
-      <div>
-        <strong id="dbStatusText">MongoDB Active</strong>
-        <p style="font-size: 0.7rem; color: var(--text-muted);">Synced Realtime</p>
+    <!-- Sidebar Bottom Controls: Theme Mode Toggle & Database Status -->
+    <div class="sidebar-footer">
+      <div class="theme-switch-item" id="btnThemeToggle" title="Toggle Day / Night Mode" role="button" tabindex="0">
+        <span class="theme-icon" id="themeToggleIcon">☀️</span>
+        <div class="theme-info">
+          <strong id="themeToggleText">Day Mode</strong>
+          <span style="font-size: 0.7rem; color: var(--text-muted);">Click to toggle</span>
+        </div>
+      </div>
+
+      <div class="db-status-badge">
+        <div class="status-dot"></div>
+        <div>
+          <strong id="dbStatusText">MongoDB Active</strong>
+          <p style="font-size: 0.7rem; color: var(--text-muted);">Synced Realtime</p>
+        </div>
       </div>
     </div>
   </aside>
@@ -109,10 +120,6 @@
         </div>
       </div>
       <div class="header-actions">
-        <!-- Day / Night Mode Toggle (Icon only) -->
-        <button class="theme-toggle-btn header-icon-btn" id="btnThemeToggle" title="Toggle Day / Night Mode" aria-label="Toggle Day / Night Theme">
-          <span id="themeToggleIcon">☀️</span>
-        </button>
         <!-- Refresh Button (Icon only) -->
         <button class="btn btn-secondary header-icon-btn" id="btnRefresh" title="Refresh Dashboard Data" aria-label="Refresh Data">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
@@ -354,8 +361,8 @@
       <div class="glass-panel">
         <div class="panel-header">
           <div>
-            <h3>🎯 Follow-up Agenda (आज किसका Follow-up लेना है)</h3>
-            <p style="color: var(--text-secondary); font-size: 0.85rem;" id="agendaSubtitle">Scheduled calls with full customer profile, contact & previous feedback</p>
+            <h3>🎯 Today's Follow-up Agenda</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;" id="agendaSubtitle">Scheduled client calls with contact details & notes</p>
           </div>
           <div style="display: flex; gap: 12px;">
             <button class="btn btn-cre-action" onclick="openCREModal()">+ Log New Call</button>
@@ -374,8 +381,8 @@
       <div class="glass-panel">
         <div class="panel-header">
           <div>
-            <h3>📝 Customer Feedback & Interaction History (Customer ka Feed-back)</h3>
-            <p style="color: var(--text-secondary); font-size: 0.85rem;">Chronological log of all CRE calls, feedback, sentiments, and promised orders</p>
+            <h3>📝 Customer Feedback & Call History</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">Complete history of customer calls, feedback, and expected orders</p>
           </div>
           <div class="search-input-wrap">
             <span class="search-icon">🔍</span>
@@ -724,7 +731,7 @@
               <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
                 <span style="font-size: 1.6rem;">📊</span>
                 <div>
-                  <h4 style="color: var(--text-primary); font-size: 1.05rem;">Google Sheets Live Sync (गूगल शीट लिंक करें)</h4>
+                  <h4 style="color: var(--text-primary); font-size: 1.05rem;">Google Sheets Live Sync</h4>
                   <p style="color: var(--text-secondary); font-size: 0.8rem;">Directly sync Client Master or Transactions from a Google Spreadsheet link</p>
                 </div>
               </div>
@@ -847,10 +854,10 @@ git push -u origin main</pre>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 8px;">
           <div class="form-group">
-            <label class="form-label">Follow-up Status (लिया या Pending)</label>
+            <label class="form-label">Follow-up Status</label>
             <select class="form-control" id="clientFollowUpStatus">
               <option value="Pending">⏳ Pending</option>
-              <option value="Taken / Done">✅ Taken / Done</option>
+              <option value="Taken / Done">✅ Done / Taken</option>
               <option value="Not Required">⚪ Not Required</option>
             </select>
           </div>
@@ -861,8 +868,8 @@ git push -u origin main</pre>
         </div>
 
         <div class="form-group">
-          <label class="form-label">Kon Follow-up ley rha h (Executive Name)</label>
-          <input type="text" class="form-control" id="clientFollowUpTakenBy" placeholder="e.g. Priya Sharma">
+          <label class="form-label">Assigned Follow-up Executive</label>
+          <input type="text" class="form-control" id="clientFollowUpTakenBy" placeholder="e.g. Priya Patel">
         </div>
 
         <div class="form-group">
@@ -951,13 +958,13 @@ git push -u origin main</pre>
         </div>
 
         <div class="form-group">
-          <label class="form-label">Customer Feedback (ग्राहक का क्या feedback रहा) *</label>
-          <textarea class="form-control" id="creFeedback" rows="3" required placeholder="Customer said stock is available, promised next order next week, discussed rates..."></textarea>
+          <label class="form-label">Customer Feedback & Discussion Notes *</label>
+          <textarea class="form-control" id="creFeedback" rows="3" required placeholder="Customer notes (e.g. Discussed new catalogue, stock required next week, promised payment)..."></textarea>
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div class="form-group">
-            <label class="form-label">Next Follow-up Date (कब Call करना है) *</label>
+            <label class="form-label">Next Follow-up Date *</label>
             <input type="date" class="form-control" id="creNextFollowUpDate" required>
           </div>
           <div class="form-group">
@@ -977,7 +984,7 @@ git push -u origin main</pre>
           </div>
           <div class="form-group">
             <label class="form-label">CRE Executive Name</label>
-            <input type="text" class="form-control" id="creExecutiveName" placeholder="e.g. Priya Sharma">
+            <input type="text" class="form-control" id="creExecutiveName" placeholder="e.g. Priya Patel">
           </div>
         </div>
 
@@ -1006,28 +1013,28 @@ git push -u origin main</pre>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div class="form-group">
-            <label class="form-label">Follow-up Status (लिया या Pending h) *</label>
+            <label class="form-label">Follow-up Status *</label>
             <select class="form-control" id="quickFollowUpStatus" required>
-              <option value="Pending">⏳ Pending (Follow-up lena h)</option>
-              <option value="Taken / Done">✅ Taken / Done (Follow-up le liya)</option>
+              <option value="Pending">⏳ Pending (Follow-up scheduled)</option>
+              <option value="Taken / Done">✅ Taken / Done (Call completed)</option>
               <option value="Not Required">⚪ Not Required</option>
             </select>
           </div>
 
           <div class="form-group">
-            <label class="form-label">Kon Follow-up ley rha h (Executive Name) *</label>
-            <input type="text" class="form-control" id="quickFollowUpTakenBy" required placeholder="e.g. Priya Sharma / Amit">
+            <label class="form-label">Assigned Executive *</label>
+            <input type="text" class="form-control" id="quickFollowUpTakenBy" required placeholder="e.g. Priya Patel">
           </div>
         </div>
 
         <div class="form-group">
-          <label class="form-label">Next Follow-up Date (कब Follow-up lena h) *</label>
+          <label class="form-label">Next Follow-up Date *</label>
           <input type="date" class="form-control" id="quickNextFollowUpDate" required>
         </div>
 
         <div class="form-group">
           <label class="form-label">Customer Feedback / Note *</label>
-          <textarea class="form-control" id="quickLastFeedback" rows="3" required placeholder="Customer ka kya feedback rha (e.g. Rate issue, asked to call next Monday)..."></textarea>
+          <textarea class="form-control" id="quickLastFeedback" rows="3" required placeholder="Customer response, price discussion, or next call note..."></textarea>
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">

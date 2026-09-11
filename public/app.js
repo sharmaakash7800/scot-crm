@@ -1247,7 +1247,7 @@ async function loadTodayFollowUpAgenda() {
         <div style="text-align: center; padding: 40px; background: rgba(255,255,255,0.02); border-radius: var(--radius-md); border: 1px dashed var(--border-color);">
           <div style="font-size: 2.2rem; margin-bottom: 8px;">🎉</div>
           <h4 style="color: var(--text-primary);">No Follow-ups Found for Current Filter</h4>
-          <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">Is filter ke liye koi follow-up record match nahi hua. Quick buttons se filter change karein ya "+ Log New Call" se schedule karein.</p>
+          <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">No records match this filter. Use the filter buttons above or click "+ Log New Call" to schedule one.</p>
         </div>
       `;
       return;
@@ -1915,28 +1915,43 @@ document.querySelectorAll('.nav-link').forEach(link => {
   });
 });
 
-// ==================== SIDEBAR AUTO-REMOVE & TOGGLE ==================== //
+// ==================== SIDEBAR HOVER & OUTSIDE CLICK AUTO-HIDE ==================== //
 function initSidebar() {
   const toggleBtn = document.getElementById('btnSidebarToggle');
   const backdrop = document.getElementById('sidebarBackdrop');
+  const sidebar = document.querySelector('.sidebar');
 
-  // Toggle button click
-  toggleBtn?.addEventListener('click', () => {
-    document.body.classList.toggle('sidebar-collapsed');
-    localStorage.setItem('scot_sidebar_collapsed', document.body.classList.contains('sidebar-collapsed'));
+  // Toggle button click (manual expand / collapse)
+  toggleBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isCollapsed = document.body.classList.contains('sidebar-collapsed');
+    if (isCollapsed) {
+      document.body.classList.remove('sidebar-collapsed');
+      document.body.classList.add('sidebar-open');
+    } else {
+      document.body.classList.add('sidebar-collapsed');
+      document.body.classList.remove('sidebar-open');
+    }
   });
 
-  // Auto-remove when clicking outside / on backdrop
+  // Clicking on backdrop auto-hides sidebar
   backdrop?.addEventListener('click', () => {
     document.body.classList.add('sidebar-collapsed');
-    localStorage.setItem('scot_sidebar_collapsed', true);
+    document.body.classList.remove('sidebar-open');
   });
 
-  // Check saved state or auto-remove on smaller laptop/tablet screens
-  const savedState = localStorage.getItem('scot_sidebar_collapsed');
-  if (savedState === 'true' || window.innerWidth < 1100) {
-    document.body.classList.add('sidebar-collapsed');
-  }
+  // Clicking outside anywhere on main wrapper or body auto-hides sidebar
+  document.addEventListener('click', (e) => {
+    if (sidebar && !sidebar.contains(e.target) && !toggleBtn?.contains(e.target)) {
+      if (!document.body.classList.contains('sidebar-collapsed')) {
+        document.body.classList.add('sidebar-collapsed');
+        document.body.classList.remove('sidebar-open');
+      }
+    }
+  });
+
+  // Set default collapsed mode so hover smoothly expands it
+  document.body.classList.add('sidebar-collapsed');
 }
 
 // ==================== TOAST NOTIFICATION UTILITY ==================== //
@@ -2075,14 +2090,14 @@ async function toggleExecutiveStatus(id, newStatus) {
 // Delete executive with safety check
 async function deleteExecutive(id, name, assignedCount) {
   if (assignedCount > 0) {
-    const doReassign = confirm(`⚠️ "${name}" ke paas ${assignedCount} active client follow-ups hain!\n\nDirect delete karne se pehle un clients ko kisi doosre CRE ko assign karna chahiye.\n\nClick OK: Pehle dusre CRE ko reassign karein\nClick Cancel: Abhi delete na karein`);
+    const doReassign = confirm(`⚠️ "${name}" currently has ${assignedCount} active client follow-ups.\n\nPlease reassign these clients to another team member before deleting.\n\nClick OK: Reassign clients now\nClick Cancel: Keep executive`);
     if (doReassign) {
       openReassignModal(name);
     }
     return;
   }
 
-  if (!confirm(`Kya aap sach me CRE "${name}" ko delete / remove karna chahte hain?`)) return;
+  if (!confirm(`Are you sure you want to remove CRE "${name}"?`)) return;
 
   try {
     const res = await fetch(`/api/executives/${id}`, { method: 'DELETE' });
