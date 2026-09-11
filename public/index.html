@@ -109,29 +109,33 @@
         </div>
       </div>
       <div class="header-actions">
-        <!-- Day / Night Mode Toggle -->
-        <button class="theme-toggle-btn" id="btnThemeToggle" title="Toggle Day / Night Mode" aria-label="Toggle Day / Night Theme">
+        <!-- Day / Night Mode Toggle (Icon only) -->
+        <button class="theme-toggle-btn header-icon-btn" id="btnThemeToggle" title="Toggle Day / Night Mode" aria-label="Toggle Day / Night Theme">
           <span id="themeToggleIcon">☀️</span>
-          <span id="themeToggleText">Day Mode</span>
         </button>
-        <button class="btn btn-secondary" id="btnRefresh" title="Refresh Dashboard Data">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
-          <span>Refresh</span>
+        <!-- Refresh Button (Icon only) -->
+        <button class="btn btn-secondary header-icon-btn" id="btnRefresh" title="Refresh Dashboard Data" aria-label="Refresh Data">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
         </button>
+        <!-- Manage CRE / Doers -->
+        <button class="btn btn-secondary" id="btnManageCRE" title="Manage CRE / Doers Team Members">
+          <span>👥</span>
+          <span class="btn-text-responsive">CRE / Doers</span>
+        </button>
+        <!-- Log CRE Call -->
         <button class="btn btn-cre-action" id="btnLogCRECall" title="Log Customer Follow-up Call">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-          <span>Log CRE Call</span>
+          <span class="btn-text-responsive">Log Call</span>
         </button>
-        <button class="btn btn-secondary" id="btnManageCRE" title="Manage CRE / Doers Team Members">
-          <span>👥 Manage CRE / Doers</span>
-        </button>
+        <!-- Add Transaction (Primary) -->
         <button class="btn btn-primary" id="btnNewTransaction" title="Record New Sales Transaction">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-          <span>Add Transaction</span>
+          <span>Transaction</span>
         </button>
+        <!-- Export Excel (Icon + Short text) -->
         <button class="btn btn-excel-action" id="btnExportCurrent" title="Export Current Table to Excel">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-          <span>Export Excel</span>
+          <span class="btn-text-responsive">Export</span>
         </button>
       </div>
     </header>

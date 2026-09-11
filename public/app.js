@@ -1143,14 +1143,20 @@ function initTheme() {
 }
 
 function setTheme(theme) {
+  const btn = document.getElementById('btnThemeToggle');
+  const icon = document.getElementById('themeToggleIcon');
+  const text = document.getElementById('themeToggleText');
+
   if (theme === 'light') {
     document.documentElement.setAttribute('data-theme', 'light');
-    document.getElementById('themeToggleIcon').innerText = '🌙';
-    document.getElementById('themeToggleText').innerText = 'Night Mode';
+    if (icon) icon.innerText = '🌙';
+    if (text) text.innerText = 'Night Mode';
+    if (btn) btn.title = 'Switch to Dark Mode';
   } else {
     document.documentElement.removeAttribute('data-theme');
-    document.getElementById('themeToggleIcon').innerText = '☀️';
-    document.getElementById('themeToggleText').innerText = 'Day Mode';
+    if (icon) icon.innerText = '☀️';
+    if (text) text.innerText = 'Day Mode';
+    if (btn) btn.title = 'Switch to Light/Day Mode';
   }
   localStorage.setItem('scot_theme', theme);
 }
@@ -2069,18 +2075,22 @@ async function toggleExecutiveStatus(id, newStatus) {
 // Delete executive with safety check
 async function deleteExecutive(id, name, assignedCount) {
   if (assignedCount > 0) {
-    alert(`⚠️ Cannot remove "${name}": This CRE is currently assigned to ${assignedCount} active client follow-ups.\n\nPlease click "🔄 Reassign" to transfer those records before removing, or Deactivate instead.`);
+    const doReassign = confirm(`⚠️ "${name}" ke paas ${assignedCount} active client follow-ups hain!\n\nDirect delete karne se pehle un clients ko kisi doosre CRE ko assign karna chahiye.\n\nClick OK: Pehle dusre CRE ko reassign karein\nClick Cancel: Abhi delete na karein`);
+    if (doReassign) {
+      openReassignModal(name);
+    }
     return;
   }
 
-  if (!confirm(`Are you sure you want to remove "${name}" from the CRE team?`)) return;
+  if (!confirm(`Kya aap sach me CRE "${name}" ko delete / remove karna chahte hain?`)) return;
 
   try {
     const res = await fetch(`/api/executives/${id}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.success) {
-      showToast(`Removed CRE "${name}"`);
+      showToast(`CRE "${name}" successfully delete ho gaya!`);
       loadExecutivesList();
+      populateScotExecutiveFilter();
     } else {
       alert(data.error || 'Failed to delete CRE');
     }
