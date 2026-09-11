@@ -887,6 +887,101 @@ app.post('/api/import-excel', upload.single('file'), async (req, res) => {
   }
 });
 
+// 7.1 Upload Clients specifically from Excel (upsert or append without wiping existing database)
+app.post('/api/clients/import-excel', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'Please select an Excel file (.xlsx or .xls) to upload.' });
+    }
+
+    const filePath = req.file.path;
+    const wb = xlsx.readFile(filePath, { cellDates: true });
+    
+    // Look for 'Client Master', 'Clients', 'Customers', or default to first sheet
+    let sheetName = wb.SheetNames.find(s => s.toLowerCase().includes('client') || s.toLowerCase().includes('customer')) || wb.SheetNames[0];
+    const rawRows = xlsx.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1 });
+
+    if (!rawRows || rawRows.length < 2) {
+      return res.status(400).json({ success: false, error: 'Excel sheet appears empty or missing data rows.' });
+    }
+
+    // Find header index row (either row 0, 1, or 2)
+    let headerIdx = 0;
+    for (let r = 0; r < Math.min(rawRows.length, 5); r++) {
+      const rowStr = (rawRows[r] || []).map(c => String(c || '').toLowerCase()).join(' ');
+      if (rowStr.includes('client') || rowStr.includes('name') || rowStr.includes('customer')) {
+        headerIdx = r;
+        break;
+      }
+    }
+
+    const headers = (rawRows[headerIdx] || []).map(h => String(h || '').toLowerCase().trim());
+    const nameCol = headers.findIndex(h => h.includes('client name') || h.includes('client') || h.includes('customer') || h.includes('name'));
+    const phoneCol = headers.findIndex(h => h.includes('contact') || h.includes('phone') || h.includes('mobile'));
+    const addrCol = headers.findIndex(h => h.includes('address') || h.includes('city') || h.includes('location'));
+    const gapCol = headers.findIndex(h => h.includes('gap') || h.includes('usual'));
+    const dateCol = headers.findIndex(h => h.includes('first order') || h.includes('date'));
+    const uidCol = headers.findIndex(h => h.includes('unique') || h.includes('id'));
+    const creCol = headers.findIndex(h => h.includes('follow') || h.includes('cre') || h.includes('executive') || h.includes('doer'));
+
+    if (nameCol === -1) {
+      return res.status(400).json({ success: false, error: 'Could not find "Client Name" or "Name" column in Excel sheet header.' });
+    }
+
+    let addedCount = 0;
+    let updatedCount = 0;
+    const clientTotal = await Client.countDocuments();
+
+    for (let i = headerIdx + 1; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      if (!row || !row[nameCol] || String(row[nameCol]).trim() === '') continue;
+
+      const clientName = String(row[nameCol]).trim();
+      const contactNumber = phoneCol !== -1 && row[phoneCol] ? String(row[phoneCol]).trim() : '';
+      const address = addrCol !== -1 && row[addrCol] ? String(row[addrCol]).trim() : '';
+      const usualOrderGap = gapCol !== -1 ? cleanNumber(row[gapCol]) : 0;
+      const firstOrderDate = dateCol !== -1 ? parseDate(row[dateCol]) : null;
+      const uniqueId = uidCol !== -1 && row[uidCol] ? String(row[uidCol]).trim() : `Scot${String(clientTotal + addedCount + 1).padStart(4, '0')}`;
+      const followUpTakenBy = creCol !== -1 && row[creCol] ? String(row[creCol]).trim() : '';
+
+      const existing = await Client.findOne({ clientName: { $regex: `^${clientName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } });
+
+      if (existing) {
+        if (contactNumber && !existing.contactNumber) existing.contactNumber = contactNumber;
+        if (address && !existing.address) existing.address = address;
+        if (usualOrderGap && !existing.usualOrderGap) existing.usualOrderGap = usualOrderGap;
+        if (firstOrderDate && !existing.firstOrderDate) existing.firstOrderDate = firstOrderDate;
+        if (followUpTakenBy && !existing.followUpTakenBy) existing.followUpTakenBy = followUpTakenBy;
+        await existing.save();
+        updatedCount++;
+      } else {
+        await Client.create({
+          uniqueId,
+          clientName,
+          contactNumber,
+          address,
+          usualOrderGap,
+          firstOrderDate,
+          followUpTakenBy
+        });
+        addedCount++;
+      }
+    }
+
+    // Clean up uploaded file
+    try { fs.unlinkSync(filePath); } catch (e) {}
+
+    res.json({
+      success: true,
+      message: `Excel processed successfully! Added ${addedCount} new customer(s), updated ${updatedCount} existing customer(s).`,
+      added: addedCount,
+      updated: updatedCount
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 8. Export to Excel
 app.get('/api/export/scot/:monthKey', async (req, res) => {
   try {

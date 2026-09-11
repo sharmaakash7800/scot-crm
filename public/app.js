@@ -52,10 +52,8 @@ function switchTab(tabId) {
     }
   });
 
-  // Auto-remove / close sidebar on small screens after clicking a link
-  if (window.innerWidth < 1100) {
-    document.body.classList.add('sidebar-collapsed');
-  }
+  // Close sidebar overlay if open
+  document.body.classList.remove('sidebar-open');
 
   // Load specific tab data
   if (tabId === 'dashboard') loadDashboard();
@@ -928,8 +926,8 @@ document.getElementById('txForm')?.addEventListener('submit', async (e) => {
   }
 });
 
-// Client Modal
 function openClientModal(client = null) {
+  populateAllExecutiveDropdowns();
   if (client) {
     document.getElementById('clientModalTitle').innerText = '✏️ Edit Client Details';
     document.getElementById('clientEditId').value = client._id;
@@ -946,6 +944,7 @@ function openClientModal(client = null) {
     document.getElementById('clientModalTitle').innerText = 'Add New Client';
     document.getElementById('clientEditId').value = '';
     document.getElementById('clientForm').reset();
+    document.getElementById('clientFollowUpTakenBy').value = '';
   }
   document.getElementById('clientModal').classList.add('active');
 }
@@ -1110,6 +1109,45 @@ async function uploadExcelFile(file) {
   } catch (err) {
     statusDiv.innerHTML = `<span style="color: #f43f5e;">❌ Network error: ${err.message}</span>`;
   }
+}
+
+// Client Master Excel File Upload
+const btnImportClientExcel = document.getElementById('btnImportClientExcel');
+const clientExcelFileInput = document.getElementById('clientExcelFileInput');
+if (btnImportClientExcel && clientExcelFileInput) {
+  btnImportClientExcel.addEventListener('click', () => clientExcelFileInput.click());
+  clientExcelFileInput.addEventListener('change', async () => {
+    if (clientExcelFileInput.files.length > 0) {
+      const file = clientExcelFileInput.files[0];
+      const formData = new FormData();
+      formData.append('file', file);
+
+      if (typeof showToast === 'function') {
+        showToast('⏳ Importing customers from Excel...', 'info');
+      }
+
+      try {
+        const res = await fetch('/api/clients/import-excel', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert(`✅ ${data.message}`);
+          loadClientMaster();
+          loadScotMonthly();
+          loadDashboard();
+          loadTodayFollowUpAgenda();
+        } else {
+          alert(`❌ Import failed: ${data.error}`);
+        }
+      } catch (err) {
+        alert('❌ Error uploading file: ' + err.message);
+      } finally {
+        clientExcelFileInput.value = '';
+      }
+    }
+  });
 }
 
 document.getElementById('btnTriggerDefaultImport')?.addEventListener('click', async () => {
@@ -1758,6 +1796,7 @@ document.getElementById('btnCalToday')?.addEventListener('click', () => {
 
 // ==================== CRE MODAL HANDLERS ==================== //
 function openCREModal(preset = {}) {
+  populateAllExecutiveDropdowns();
   document.getElementById('creClientId').value = preset.clientId || '';
   document.getElementById('creClientName').value = preset.clientName || '';
   document.getElementById('creContactNumber').value = preset.contactNumber || '';
@@ -1765,6 +1804,9 @@ function openCREModal(preset = {}) {
   document.getElementById('creNextFollowUpDate').value = preset.nextFollowUpDate || '';
   document.getElementById('creFeedback').value = '';
   document.getElementById('creExpectedAmount').value = '';
+  if (preset.creName) {
+    document.getElementById('creExecutiveName').value = preset.creName;
+  }
   document.getElementById('creModal').classList.add('active');
 }
 
@@ -1815,10 +1857,11 @@ document.getElementById('btnLogCRECall')?.addEventListener('click', () => openCR
 
 // ==================== QUICK CLIENT FOLLOW-UP MODAL ==================== //
 function openQuickFollowUpModal(clientId, clientName, nextDate, takenBy, status, feedback) {
+  populateAllExecutiveDropdowns();
   document.getElementById('quickFollowUpClientId').value = clientId;
   document.getElementById('quickFollowUpClientName').value = clientName;
   document.getElementById('quickNextFollowUpDate').value = nextDate || new Date().toISOString().split('T')[0];
-  document.getElementById('quickFollowUpTakenBy').value = takenBy || 'CRE Executive';
+  document.getElementById('quickFollowUpTakenBy').value = takenBy || '';
   document.getElementById('quickFollowUpStatus').value = status || 'Pending';
   document.getElementById('quickLastFeedback').value = feedback || '';
   document.getElementById('quickFollowUpModal').classList.add('active');
@@ -1924,34 +1967,25 @@ function initSidebar() {
   // Toggle button click (manual expand / collapse)
   toggleBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
-    const isCollapsed = document.body.classList.contains('sidebar-collapsed');
-    if (isCollapsed) {
-      document.body.classList.remove('sidebar-collapsed');
-      document.body.classList.add('sidebar-open');
-    } else {
-      document.body.classList.add('sidebar-collapsed');
+    const isOpen = document.body.classList.contains('sidebar-open');
+    if (isOpen) {
       document.body.classList.remove('sidebar-open');
+    } else {
+      document.body.classList.add('sidebar-open');
     }
   });
 
   // Clicking on backdrop auto-hides sidebar
   backdrop?.addEventListener('click', () => {
-    document.body.classList.add('sidebar-collapsed');
     document.body.classList.remove('sidebar-open');
   });
 
   // Clicking outside anywhere on main wrapper or body auto-hides sidebar
   document.addEventListener('click', (e) => {
     if (sidebar && !sidebar.contains(e.target) && !toggleBtn?.contains(e.target)) {
-      if (!document.body.classList.contains('sidebar-collapsed')) {
-        document.body.classList.add('sidebar-collapsed');
-        document.body.classList.remove('sidebar-open');
-      }
+      document.body.classList.remove('sidebar-open');
     }
   });
-
-  // Set default collapsed mode so hover smoothly expands it
-  document.body.classList.add('sidebar-collapsed');
 }
 
 // ==================== TOAST NOTIFICATION UTILITY ==================== //
@@ -1984,9 +2018,35 @@ async function loadExecutivesList() {
     renderExecutivesModalTable();
     populateScotExecutiveFilter();
     populateAgendaExecutiveDropdown();
+    populateAllExecutiveDropdowns();
   } catch (err) {
     console.error('Error loading executives:', err);
   }
+}
+
+// Populate all CRE / Executive dropdowns across modals
+function populateAllExecutiveDropdowns() {
+  const dropdownIds = ['clientFollowUpTakenBy', 'creExecutiveName', 'quickFollowUpTakenBy', 'drawerFollowUpBy'];
+  dropdownIds.forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const currentVal = sel.value;
+    const placeholder = id === 'creExecutiveName' || id === 'clientFollowUpTakenBy'
+      ? '-- Select CRE / Doer --'
+      : (id === 'quickFollowUpTakenBy' ? '-- Select CRE / Doer --' : 'Unassigned');
+
+    sel.innerHTML = `<option value="">${placeholder}</option>`;
+    allExecutivesList.forEach(ex => {
+      if (!ex.name) return;
+      const opt = document.createElement('option');
+      opt.value = ex.name;
+      opt.innerText = ex.name + (!ex.isActive ? ' (Inactive)' : '');
+      sel.appendChild(opt);
+    });
+    if (currentVal) {
+      sel.value = currentVal;
+    }
+  });
 }
 
 // Dynamically refresh Agenda Executive dropdown from allExecutivesList

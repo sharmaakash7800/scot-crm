@@ -616,11 +616,15 @@
             <h3>Client Master Database</h3>
             <p style="color: var(--text-secondary); font-size: 0.85rem;">Stored persistently in MongoDB</p>
           </div>
-          <div style="display: flex; gap: 12px;">
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
             <div class="search-input-wrap">
               <span class="search-icon">🔍</span>
               <input type="text" class="search-input" id="clientMasterSearch" placeholder="Search clients...">
             </div>
+            <button class="btn btn-secondary btn-excel-action" id="btnImportClientExcel" title="Upload Excel with new clients">
+              <span>📥 Import Excel</span>
+            </button>
+            <input type="file" id="clientExcelFileInput" accept=".xlsx, .xls" style="display: none;">
             <button class="btn btn-primary" id="btnNewClient">+ Add Client</button>
           </div>
         </div>
@@ -870,8 +874,12 @@ git push -u origin main</pre>
         </div>
 
         <div class="form-group">
-          <label class="form-label">Assigned Follow-up Executive</label>
-          <input type="text" class="form-control" id="clientFollowUpTakenBy" placeholder="e.g. Priya Patel">
+          <label class="form-label">Assigned Follow-up Executive / Doer</label>
+          <div class="custom-select-wrap">
+            <select class="form-control" id="clientFollowUpTakenBy">
+              <option value="">-- Select CRE / Doer --</option>
+            </select>
+          </div>
         </div>
 
         <div class="form-group">
@@ -985,8 +993,10 @@ git push -u origin main</pre>
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">CRE Executive Name</label>
-            <input type="text" class="form-control" id="creExecutiveName" placeholder="e.g. Priya Patel">
+            <label class="form-label">CRE Executive / Doer Name</label>
+            <select class="form-control" id="creExecutiveName">
+              <option value="">-- Select CRE / Doer --</option>
+            </select>
           </div>
         </div>
 
@@ -1024,8 +1034,10 @@ git push -u origin main</pre>
           </div>
 
           <div class="form-group">
-            <label class="form-label">Assigned Executive *</label>
-            <input type="text" class="form-control" id="quickFollowUpTakenBy" required placeholder="e.g. Priya Patel">
+            <label class="form-label">Assigned Executive / Doer *</label>
+            <select class="form-control" id="quickFollowUpTakenBy" required>
+              <option value="">-- Select CRE / Doer --</option>
+            </select>
           </div>
         </div>
 
