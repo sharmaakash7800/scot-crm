@@ -955,10 +955,23 @@ function closeClientModal() {
 }
 
 async function editClient(id) {
-  const res = await fetch(`/api/clients?search=${id}`);
-  const data = await res.json();
-  const c = data.clients?.find(item => item._id === id);
-  if (c) openClientModal(c);
+  try {
+    const res = await fetch(`/api/clients/${id}`);
+    const data = await res.json();
+    if (data.success && data.client) {
+      openClientModal(data.client);
+    } else {
+      // Fallback
+      const resList = await fetch(`/api/clients?limit=2000`);
+      const dataList = await resList.json();
+      const c = dataList.clients?.find(item => item._id === id);
+      if (c) openClientModal(c);
+      else alert('Client details not found');
+    }
+  } catch (err) {
+    console.error('Error opening client modal:', err);
+    alert('Error loading client details: ' + err.message);
+  }
 }
 
 async function deleteClient(id) {
@@ -993,20 +1006,30 @@ document.getElementById('clientForm')?.addEventListener('submit', async (e) => {
   const url = id ? `/api/clients/${id}` : '/api/clients';
   const method = id ? 'PUT' : 'POST';
 
-  const res = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  if (res.ok) {
-    closeClientModal();
-    loadClientMaster();
-    loadScotMonthly();
-    loadTodayFollowUpAgenda();
-    loadFollowUpCalendar();
-    alert('✅ Client data saved & updated successfully!');
-  } else {
-    alert('Failed to save client');
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      closeClientModal();
+      loadClientMaster();
+      loadScotMonthly();
+      loadTodayFollowUpAgenda();
+      loadFollowUpCalendar();
+      if (typeof showToast === 'function') {
+        showToast('Client data saved & updated successfully!');
+      } else {
+        alert('✅ Client data saved & updated successfully!');
+      }
+    } else {
+      alert('Failed to save client: ' + (data.error || 'Unknown error'));
+    }
+  } catch (err) {
+    console.error('Error saving client:', err);
+    alert('Error saving client: ' + err.message);
   }
 });
 
@@ -1817,7 +1840,7 @@ document.getElementById('quickFollowUpForm')?.addEventListener('submit', async (
       body: JSON.stringify(body)
     });
     const data = await res.json();
-    if (data.success) {
+    if (res.ok && data.success) {
       closeQuickFollowUpModal();
       loadScotMonthly();
       loadTodayFollowUpAgenda();

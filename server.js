@@ -265,6 +265,19 @@ app.get('/api/clients', async (req, res) => {
   }
 });
 
+// Get Single Client by ID
+app.get('/api/clients/:id', async (req, res) => {
+  try {
+    const client = await Client.findById(req.params.id);
+    if (!client) {
+      return res.status(404).json({ success: false, error: 'Client not found' });
+    }
+    res.json({ success: true, client });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/api/clients', async (req, res) => {
   try {
     const { clientName, contactNumber, address, usualOrderGap, firstOrderDate, uniqueId } = req.body;
