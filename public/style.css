@@ -98,12 +98,12 @@ body {
 
 /* ==================== SIDEBAR NAVIGATION ==================== */
 .sidebar {
-  width: 72px;
+  width: 250px;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  padding: 20px 10px 16px;
+  padding: 20px 14px 16px;
   position: fixed;
   top: 0;
   bottom: 0;
@@ -111,75 +111,38 @@ body {
   height: 100vh;
   z-index: 100;
   flex-shrink: 0;
-  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.25);
-  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease;
+  box-shadow: 12px 0 36px rgba(0, 0, 0, 0.45);
+  transform: translateX(-100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow-y: auto;
   overflow-x: hidden;
 }
 
-/* Sidebar Collapsed State (Default) */
+body.sidebar-open .sidebar {
+  transform: translateX(0);
+}
+
 .sidebar .brand-text,
 .sidebar .nav-link span:not(.nav-icon),
 .sidebar .theme-info,
 .sidebar .db-status-badge div {
-  opacity: 0;
-  pointer-events: none;
-  display: none;
-}
-
-.sidebar .brand-logo {
-  justify-content: center;
-  padding: 0 0 16px;
-}
-
-.sidebar .nav-link {
-  justify-content: center;
-  padding: 12px;
-}
-
-.sidebar .db-status-badge,
-.sidebar .theme-switch-item {
-  justify-content: center;
-  padding: 10px;
-}
-
-/* When hover or opened: Expand OVER dashboard as an overlay without resizing dashboard */
-.sidebar:hover,
-body.sidebar-open .sidebar {
-  width: 250px;
-  padding: 20px 14px 16px;
-  box-shadow: 12px 0 36px rgba(0, 0, 0, 0.45);
-}
-
-.sidebar:hover .brand-text,
-body.sidebar-open .sidebar .brand-text,
-.sidebar:hover .nav-link span:not(.nav-icon),
-body.sidebar-open .sidebar .nav-link span:not(.nav-icon),
-.sidebar:hover .theme-info,
-body.sidebar-open .sidebar .theme-info,
-.sidebar:hover .db-status-badge div,
-body.sidebar-open .sidebar .db-status-badge div {
   opacity: 1;
   pointer-events: auto;
   display: block;
 }
 
-.sidebar:hover .brand-logo,
-body.sidebar-open .sidebar .brand-logo {
+.sidebar .brand-logo {
   justify-content: flex-start;
   padding: 0 8px 16px;
 }
 
-.sidebar:hover .nav-link,
-body.sidebar-open .sidebar .nav-link {
+.sidebar .nav-link {
   justify-content: flex-start;
   padding: 10px 14px;
 }
 
-.sidebar:hover .db-status-badge,
-body.sidebar-open .sidebar .db-status-badge,
-.sidebar:hover .theme-switch-item,
-body.sidebar-open .sidebar .theme-switch-item {
+.sidebar .db-status-badge,
+.sidebar .theme-switch-item {
   justify-content: flex-start;
   padding: 10px 12px;
 }
@@ -372,9 +335,9 @@ body.sidebar-open .sidebar-backdrop {
 .main-wrapper {
   flex: 1;
   min-width: 0;
-  margin-left: 72px;
-  width: calc(100% - 72px);
-  max-width: calc(100% - 72px);
+  margin-left: 0;
+  width: 100%;
+  max-width: 100%;
   overflow-x: hidden;
   padding: 24px 28px 48px;
   min-height: 100vh;
@@ -405,7 +368,7 @@ body.sidebar-open .sidebar-backdrop {
 .top-header {
   position: sticky;
   top: 0;
-  z-index: 45;
+  z-index: 90;
   background: var(--bg-main);
   padding: 14px 0 16px;
   border-bottom: 1px solid var(--border-color);
@@ -472,16 +435,16 @@ body.sidebar-open .sidebar-backdrop {
 
 /* Primary CTA: Add Transaction (Clear visual anchor) */
 .btn-primary {
-  background: linear-gradient(135deg, #6366f1, #7c3aed);
+  background: var(--accent-primary);
   color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 3px 12px rgba(99, 102, 241, 0.32);
+  border: 1px solid transparent;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.2);
 }
 
 .btn-primary:hover {
-  background: linear-gradient(135deg, #4f46e5, #6d28d9);
+  background: var(--accent-primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.42);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
 }
 
 .btn-primary:active {
@@ -527,22 +490,19 @@ body.sidebar-open .sidebar-backdrop {
 
 /* Tertiary/Tool: Export Excel */
 .btn-excel-action {
-  background: rgba(6, 182, 212, 0.12);
-  color: #38bdf8;
-  border: 1px solid rgba(6, 182, 212, 0.28);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .btn-excel-action:hover {
-  background: rgba(6, 182, 212, 0.2);
-  border-color: rgba(6, 182, 212, 0.45);
-  color: #0ea5e9;
+  background: var(--bg-card-hover);
+  border-color: rgba(255, 255, 255, 0.18);
   transform: translateY(-1px);
 }
 
-[data-theme="light"] .btn-excel-action {
-  background: #f0f9ff;
-  color: #0369a1;
-  border-color: #bae6fd;
+[data-theme="light"] .btn-excel-action:hover {
+  border-color: #cbd5e1;
 }
 
 /* Small Table Row Buttons */
@@ -679,12 +639,12 @@ body.sidebar-open .sidebar-backdrop {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  padding: 18px 20px;
-  margin-bottom: 24px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
   box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
 .agenda-filter-row {
@@ -786,21 +746,24 @@ body.sidebar-open .sidebar-backdrop {
 .agenda-counters-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 12px;
-  margin-top: 4px;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 .agenda-counter-card {
   background: var(--bg-main);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  padding: 12px 14px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
   cursor: pointer;
   transition: var(--transition-fast);
   user-select: none;
+  min-height: 52px;
+  max-height: 62px;
 }
 
 [data-theme="light"] .agenda-counter-card {
@@ -815,11 +778,11 @@ body.sidebar-open .sidebar-backdrop {
 }
 
 .counter-val {
-  font-size: 1.55rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  color: #38bdf8; /* Clean vibrant blue counter as in user screenshot */
+  color: #38bdf8;
   line-height: 1.1;
-  margin-bottom: 6px;
+  margin-bottom: 3px;
   letter-spacing: -0.02em;
 }
 
@@ -830,7 +793,7 @@ body.sidebar-open .sidebar-backdrop {
 }
 
 .counter-text {
-  font-size: 0.72rem;
+  font-size: 0.65rem;
   font-weight: 700;
   color: var(--text-secondary);
   letter-spacing: 0.04em;
@@ -863,8 +826,8 @@ body.sidebar-open .sidebar-backdrop {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  padding: 18px 20px;
-  margin-bottom: 14px;
+  padding: 12px 16px;
+  margin-bottom: 10px;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -2210,3 +2173,39 @@ select.form-control option {
   to { transform: translateY(0); opacity: 1; }
 }
 
+/* ==================== CRE FOLLOW-UP TAB: VERTICAL COMPACTNESS ==================== */
+#tab-cre-followups .glass-panel {
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+#tab-cre-followups .panel-header {
+  margin-bottom: 12px;
+}
+
+/* Compact card color accents for quick scanning */
+.card-pending { border-top: 2px solid #94a3b8; }
+.card-due-today { border-top: 2px solid #f59e0b; }
+.card-due-tomorrow { border-top: 2px solid #38bdf8; }
+.card-overdue { border-top: 2px solid #f43f5e; }
+.card-completed { border-top: 2px solid #10b981; }
+.card-total { border-top: 2px solid #6366f1; }
+
+/* Quick filter buttons: compact height */
+.btn-quick-filter {
+  height: 34px;
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+}
+
+/* Agenda filter date input compact */
+.agenda-date-input {
+  height: 36px !important;
+  max-width: 155px;
+}
+
+/* Agenda counter alignment: center everything neatly */
+.agenda-counter-card .counter-label {
+  justify-content: center;
+}

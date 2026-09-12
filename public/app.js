@@ -1,9 +1,87 @@
-// State variables
-let currentMonthKey = "Apr'26";
-let currentMonthsList = [];
-let salesChart = null;
-let healthChart = null;
+// ==================== GLOBAL STATE MANAGEMENT ==================== //
+class GlobalStore {
+  constructor() {
+    this.state = {
+      currentMonthKey: "Apr'26",
+      currentPeriod: "today", // today, week, month, all
+      monthsList: [],
+      clients: [],
+      executives: [],
+      stats: null,
+      followupStats: null,
+      scotRecords: []
+    };
+    this.listeners = new Set();
+  }
 
+  getState() {
+    return this.state;
+  }
+
+  setState(newState) {
+    this.state = { ...this.state, ...newState };
+    this.notify();
+  }
+
+  subscribe(listener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  notify() {
+    this.listeners.forEach(listener => listener(this.state));
+  }
+
+  // Refresh critical data from backend
+  async refreshAll() {
+    try {
+      const [statsRes, execsRes, clientsRes, followupStatsRes] = await Promise.all([
+        fetch('/api/stats'),
+        fetch('/api/executives'),
+        fetch(`/api/clients?limit=5000`),
+        fetch(`/api/dashboard/followup-stats?period=${this.state.currentPeriod}`)
+      ]);
+      const stats = await statsRes.json();
+      const execs = await execsRes.json();
+      const clientsData = await clientsRes.json();
+      const followupStats = await followupStatsRes.json();
+
+      let clients = clientsData.clients || [];
+      const seenNames = new Set();
+      clients = clients.filter(c => {
+        const normalized = (c.clientName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        if (seenNames.has(normalized)) return false;
+        seenNames.add(normalized);
+        return true;
+      });
+
+      this.setState({
+        stats: stats,
+        monthsList: stats.months || this.state.monthsList,
+        executives: execs.executives || [],
+        clients: clients,
+        followupStats: followupStats
+      });
+    } catch (err) {
+      console.error('Store refresh error:', err);
+    }
+  }
+}
+
+const store = new GlobalStore();
+
+// Backwards compatibility wrappers for old variables
+let currentMonthKey = store.getState().currentMonthKey;
+let currentPeriod = store.getState().currentPeriod;
+let currentMonthsList = [];
+let followUpActivityChart = null;
+let followUpStatusChart = null;
+
+// Keep currentMonthKey in sync with store
+store.subscribe(state => {
+  currentMonthKey = state.currentMonthKey;
+  currentMonthsList = state.monthsList;
+});
 // Helpers
 function formatCurrency(num) {
   if (num === null || num === undefined || isNaN(num)) return '₹0';
@@ -111,96 +189,147 @@ function selectMonth(monthKey) {
 // 1. Dashboard Loader
 async function loadDashboard() {
   try {
-    const resStats = await fetch('/api/stats');
-    const dataStats = await resStats.json();
+    const stats = store.getState().followupStats;
+    if (!stats) return;
 
-    if (dataStats.months && (!currentMonthsList || currentMonthsList.length === 0)) {
-      renderMonthPills(dataStats.months);
+    // 1. Render KPIs
+    document.getElementById('kpiFollowUpsDue').innerText = stats.dueCount || 0;
+    document.getElementById('kpiFollowUpsDone').innerText = stats.followupsDone || 0;
+    document.getElementById('kpiFollowUpsPending').innerText = stats.pendingCount || 0;
+    document.getElementById('kpiFollowUpsOverdue').innerText = stats.overdueCount || 0;
+    document.getElementById('kpiCallsMade').innerText = stats.callsMade || 0;
+    document.getElementById('kpiConnectedCalls').innerText = stats.connectedCalls || 0;
+    document.getElementById('kpiLeadsGenerated').innerText = stats.leadsGenerated || 0;
+    document.getElementById('kpiConversionPercent').innerText = `${stats.conversionPercent || 0}%`;
+
+    // 2. Render Activity Chart
+    renderFollowUpActivityChart(stats.dailyActivity);
+
+    // 3. Render Status Distribution Chart
+    renderFollowUpStatusChart(stats);
+
+    // 4. Render Upcoming Tasks
+    const tContainer = document.getElementById('upcomingTasksContainer');
+    if (tContainer && stats.upcomingTasks) {
+      tContainer.innerHTML = `
+        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+          <span style="color: var(--text-secondary); font-weight: 500;">Today</span>
+          <span class="badge badge-risk" style="font-size: 1rem;">${stats.upcomingTasks.today}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+          <span style="color: var(--text-secondary); font-weight: 500;">Tomorrow</span>
+          <span class="badge badge-slow" style="font-size: 1rem;">${stats.upcomingTasks.tomorrow}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+          <span style="color: var(--text-secondary); font-weight: 500;">Next 7 Days</span>
+          <span style="font-weight: 700; color: var(--text-primary); font-size: 1rem;">${stats.upcomingTasks.next7}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+          <span style="color: var(--text-secondary); font-weight: 500;">Next 15 Days</span>
+          <span style="font-weight: 700; color: var(--text-primary); font-size: 1rem;">${stats.upcomingTasks.next15}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 8px 0;">
+          <span style="color: var(--text-secondary); font-weight: 500;">Next 30 Days</span>
+          <span style="font-weight: 700; color: var(--text-primary); font-size: 1rem;">${stats.upcomingTasks.next30}</span>
+        </div>
+      `;
     }
 
-    // Fetch month specific data
-    const resMonth = await fetch(`/api/scot-month/${encodeURIComponent(currentMonthKey)}`);
-    const dataMonth = await resMonth.json();
-    const sum = dataMonth.summary || {};
-
-    document.getElementById('kpiTotalClients').innerText = sum.totalClients || dataStats.totalClients || 0;
-    document.getElementById('kpiTotalSales').innerText = formatCurrency(sum.totalSalesThisCutoff || 0);
-    document.getElementById('kpiInactiveClients').innerText = sum.inactiveHalfYear || 0;
-    document.getElementById('kpiInactiveLostSale').innerText = `Lost Sale: ${formatCurrency(sum.lostSalesInactive || 0)}`;
-    document.getElementById('kpiIrregularClients').innerText = sum.irregularClients || 0;
-    document.getElementById('kpiIrregularLostSale').innerText = `Lost Sale: ${formatCurrency(sum.lostSalesIrregular || 0)}`;
-
-    // Render Priority Table (Clients requiring urgent attention)
-    const records = dataMonth.records || [];
-    const priorityList = records
-      .filter(r => r.status.includes('Inactive') || r.status.includes('At Risk') || (r.daysSinceLastOrder !== null && r.usualOrderGap > 0 && r.daysSinceLastOrder > r.usualOrderGap))
-      .slice(0, 10);
-
-    const tbody = document.querySelector('#dashboardPriorityTable tbody');
-    if (priorityList.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No urgent follow-ups for this period.</td></tr>';
-    } else {
-      tbody.innerHTML = priorityList.map(r => {
-        let daysDisplay = '—';
-        let daysColor = 'var(--text-muted)';
-        if (r.daysSinceLastOrder !== null && r.daysSinceLastOrder !== undefined) {
-          daysDisplay = `${r.daysSinceLastOrder} days`;
-          daysColor = r.daysSinceLastOrder >= 182 ? '#fb7185' : '#fbbf24';
-        } else {
-          daysDisplay = 'No Orders';
-        }
-
-        return `
+    // 5. Render CRE-wise Performance Table
+    const tbody = document.querySelector('#crePerformanceTable tbody');
+    if (tbody) {
+      if (!stats.crePerformance || stats.crePerformance.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px;">No execution data available for this period.</td></tr>';
+      } else {
+        tbody.innerHTML = stats.crePerformance.map(r => `
           <tr>
-            <td><strong>${r.clientName}</strong></td>
-            <td>${r.contactNumber || '-'}</td>
-            <td><span style="font-weight: 600; color: ${daysColor}">${daysDisplay}</span></td>
-            <td>${formatDate(r.lastOrderDate)}</td>
-            <td>${formatCurrency(r.lastOrderAmount)}</td>
-            <td>${getStatusBadge(r.status)}</td>
+            <td><strong>${r.cre}</strong></td>
+            <td style="text-align: right;">${r.calls}</td>
+            <td style="text-align: right;"><span class="badge badge-active">${r.followupsDone}</span></td>
+            <td style="text-align: right;"><span class="badge badge-slow">${r.pending}</span></td>
+            <td style="text-align: right;"><span class="badge badge-inactive">${r.overdue}</span></td>
+            <td style="text-align: right; font-weight: 700; color: var(--accent-emerald);">${r.leads}</td>
+            <td style="text-align: right; font-weight: 700;">${r.conversionPercent}%</td>
           </tr>
-        `;
-      }).join('');
+        `).join('');
+      }
     }
 
-    // Health Chart Doughnut
-    renderHealthChart(sum);
-    // Load full loss trend chart
-    loadTrendCharts();
   } catch (err) {
     console.error('Error loading dashboard:', err);
   }
 }
 
-function renderHealthChart(summary) {
-  const ctx = document.getElementById('clientHealthChart');
+function renderFollowUpActivityChart(dailyData) {
+  const ctx = document.getElementById('followUpActivityChart');
+  if (!ctx || !dailyData) return;
+
+  const dates = Object.keys(dailyData).sort();
+  const calls = dates.map(d => dailyData[d].calls);
+  const leads = dates.map(d => dailyData[d].leads);
+
+  const formattedDates = dates.map(d => formatDate(d));
+
+  if (followUpActivityChart) followUpActivityChart.destroy();
+
+  followUpActivityChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: formattedDates.length > 0 ? formattedDates : ['No Data'],
+      datasets: [
+        {
+          label: 'Calls Made',
+          data: calls.length > 0 ? calls : [0],
+          borderColor: '#4f46e5',
+          backgroundColor: 'rgba(79, 70, 229, 0.1)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.3
+        },
+        {
+          label: 'Leads Generated',
+          data: leads.length > 0 ? leads : [0],
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { color: '#94a3b8', font: { family: 'Inter' } } }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', precision: 0 } }
+      }
+    }
+  });
+}
+
+function renderFollowUpStatusChart(stats) {
+  const ctx = document.getElementById('followUpStatusChart');
   if (!ctx) return;
 
   const data = [
-    summary.activeClients || 0,
-    summary.slowClients || 0,
-    summary.atRiskClients || 0,
-    summary.inactiveHalfYear || 0,
-    summary.noOrdersYet || 0
+    stats.followupsDone || 0,
+    stats.pendingCount || 0,
+    stats.overdueCount || 0
   ];
 
-  if (healthChart) {
-    healthChart.destroy();
-  }
+  if (followUpStatusChart) followUpStatusChart.destroy();
 
-  healthChart = new Chart(ctx, {
+  followUpStatusChart = new Chart(ctx, {
     type: 'doughnut',
     data: {
-      labels: ['Active (0-30d)', 'Slow (31-90d)', 'At Risk (91-181d)', 'Inactive (6m+)', 'No Orders'],
+      labels: ['Completed', 'Pending', 'Overdue'],
       datasets: [{
         data: data,
-        backgroundColor: [
-          '#10b981',
-          '#f59e0b',
-          '#f97316',
-          '#f43f5e',
-          '#64748b'
-        ],
+        backgroundColor: ['#10b981', '#f59e0b', '#f43f5e'],
         borderWidth: 0
       }]
     },
@@ -208,79 +337,11 @@ function renderHealthChart(summary) {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: {
-          position: 'bottom',
-          labels: { color: '#94a3b8', font: { family: 'Inter', size: 11 } }
-        }
+        legend: { position: 'bottom', labels: { color: '#94a3b8', font: { family: 'Inter', size: 11 } } }
       },
       cutout: '70%'
     }
   });
-}
-
-async function loadTrendCharts() {
-  try {
-    const res = await fetch('/api/monthly-loss-matrix');
-    const data = await res.json();
-    const matrix = data.matrix || [];
-
-    const labels = matrix.map(m => m.monthKey);
-    const salesData = matrix.map(m => m.totalSales);
-    const irregularLostData = matrix.map(m => m.lostSalesIrregular);
-
-    const ctx = document.getElementById('salesTrendChart');
-    if (!ctx) return;
-
-    if (salesChart) {
-      salesChart.destroy();
-    }
-
-    salesChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: labels,
-        datasets: [
-          {
-            label: 'Cumulative Sales (₹)',
-            data: salesData,
-            backgroundColor: 'rgba(99, 102, 241, 0.7)',
-            borderRadius: 6
-          },
-          {
-            label: 'Lost Sales (Irregular Clients ₹)',
-            data: irregularLostData,
-            backgroundColor: 'rgba(244, 63, 94, 0.7)',
-            borderRadius: 6
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'top',
-            labels: { color: '#94a3b8', font: { family: 'Inter' } }
-          }
-        },
-        scales: {
-          x: {
-            grid: { color: 'rgba(255,255,255,0.05)' },
-            ticks: { color: '#94a3b8' }
-          },
-          y: {
-            grid: { color: 'rgba(255,255,255,0.05)' },
-            ticks: {
-              color: '#94a3b8',
-              callback: val => '₹' + (val / 100000).toFixed(1) + 'L'
-            }
-          }
-        }
-      }
-    });
-  } catch (err) {
-    console.error('Failed to load chart trends:', err);
-  }
 }
 
 // State for SCOT Table Filters & Summary
@@ -801,37 +862,46 @@ async function loadMonthlyLossMatrix() {
 async function loadClientMaster() {
   try {
     const q = document.getElementById('clientMasterSearch')?.value || '';
-    const res = await fetch(`/api/clients?search=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    const clients = data.clients || [];
+    let clients = store.getState().clients || [];
+
+    if (q) {
+      const qLower = q.toLowerCase().trim();
+      clients = clients.filter(c => 
+         c.clientName.toLowerCase().includes(qLower) || 
+         (c.contactNumber && c.contactNumber.includes(qLower))
+      );
+    }
 
     const tbody = document.querySelector('#clientMasterTable tbody');
     if (clients.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No clients found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No clients found.</td></tr>';
       return;
     }
 
+    // Simplified columns: Client | Contact | Next Follow-up | Status | Last Activity | Actions
     tbody.innerHTML = clients.map(c => {
       const isTaken = c.followUpStatus === 'Taken / Done';
       const statusBadge = isTaken
         ? '<span class="badge badge-active">✅ Done</span>'
         : (c.nextFollowUpDate ? '<span class="badge badge-slow">⏳ Pending</span>' : '<span class="badge badge-none">Not Set</span>');
+        
+      const lastActivity = c.actualDate ? formatDate(c.actualDate) : (c.firstOrderDate ? formatDate(c.firstOrderDate) : 'No Activity');
 
       return `
         <tr>
-          <td><code>${c.uniqueId || '-'}</code></td>
-          <td><strong style="cursor: pointer; color: var(--accent-cyan);" onclick="editClient('${c._id}')" title="Click to Edit">${c.clientName} ✏️</strong></td>
+          <td>
+             <strong style="cursor: pointer; color: var(--text-primary); font-size: 1.05rem;" onclick="openClientOverviewDrawer('${c._id}')">${c.clientName}</strong><br/>
+             <span style="font-size: 0.75rem; color: var(--text-muted);">${c.uniqueId || '-'}</span>
+          </td>
           <td>${c.contactNumber || '-'}</td>
-          <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis;">${c.address || '-'}</td>
-          <td>${c.usualOrderGap || 0} days</td>
           <td><strong style="color: var(--accent-cyan);">${formatDate(c.nextFollowUpDate)}</strong></td>
           <td>${statusBadge}</td>
-          <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; font-size: 0.82rem; color: var(--text-secondary);">${c.lastFeedback || '-'}</td>
+          <td>${lastActivity}</td>
           <td>
             <div style="display: flex; gap: 6px;">
-              <button class="btn btn-primary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="editClient('${c._id}')">✏️ Edit</button>
-              <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; color: var(--accent-cyan);" onclick="viewClientHistory('${c._id}')">📜 History</button>
-              <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; color: #fb7185;" onclick="deleteClient('${c._id}')">Delete</button>
+              <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="openClientOverviewDrawer('${c._id}')">👁️ View</button>
+              <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; color: var(--accent-primary);" onclick="editClient('${c._id}')">✏️ Edit</button>
+              <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; color: #DC2626;" onclick="deleteClient('${c._id}')">Delete</button>
             </div>
           </td>
         </tr>
@@ -1001,36 +1071,38 @@ function closeClientModal() {
 
 async function editClient(id) {
   try {
-    const res = await fetch(`/api/clients/${id}`);
-    const data = await res.json();
-    if (data.success && data.client) {
-      openClientModal(data.client);
+    const c = store.getState().clients.find(item => item._id === id);
+    if (c) {
+      openClientModal(c);
     } else {
-      // Fallback
-      const resList = await fetch(`/api/clients?limit=2000`);
-      const dataList = await resList.json();
-      const c = dataList.clients?.find(item => item._id === id);
-      if (c) openClientModal(c);
-      else alert('Client details not found');
+      showToast('Client details not found in store', 'error');
     }
   } catch (err) {
     console.error('Error opening client modal:', err);
-    alert('Error loading client details: ' + err.message);
+    showToast('Error loading client details: ' + err.message, 'error');
   }
 }
 
 async function deleteClient(id) {
   if (!confirm('Are you sure you want to delete this client?')) return;
-  await fetch(`/api/clients/${id}`, { method: 'DELETE' });
-  loadClientMaster();
-  loadScotMonthly();
+  try {
+    await fetch(`/api/clients/${id}`, { method: 'DELETE' });
+    showToast('Client deleted successfully');
+    await store.refreshAll();
+  } catch (err) {
+    showToast('Failed to delete client', 'error');
+  }
 }
 
 async function deleteTransaction(id) {
   if (!confirm('Are you sure you want to delete this transaction?')) return;
-  await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
-  loadTransactions();
-  loadDashboard();
+  try {
+    await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+    showToast('Transaction deleted successfully');
+    await store.refreshAll();
+  } catch (err) {
+    showToast('Failed to delete transaction', 'error');
+  }
 }
 
 document.getElementById('clientForm')?.addEventListener('submit', async (e) => {
@@ -1068,6 +1140,11 @@ document.getElementById('clientForm')?.addEventListener('submit', async (e) => {
   const url = id ? `/api/clients/${id}` : '/api/clients';
   const method = id ? 'PUT' : 'POST';
 
+  const btn = e.target.querySelector('button[type="submit"]');
+  const originalText = btn.innerText;
+  btn.disabled = true;
+  btn.innerText = 'Saving...';
+
   try {
     const res = await fetch(url, {
       method,
@@ -1077,21 +1154,17 @@ document.getElementById('clientForm')?.addEventListener('submit', async (e) => {
     const data = await res.json();
     if (res.ok && data.success) {
       closeClientModal();
-      loadClientMaster();
-      loadScotMonthly();
-      loadTodayFollowUpAgenda();
-      loadFollowUpCalendar();
-      if (typeof showToast === 'function') {
-        showToast('Client data saved & updated successfully!');
-      } else {
-        alert('✅ Client data saved & updated successfully!');
-      }
+      showToast('Client data saved & updated successfully!');
+      await store.refreshAll();
     } else {
-      alert('Failed to save client: ' + (data.error || 'Unknown error'));
+      showToast('Failed to save client: ' + (data.error || 'Unknown error'), 'error');
     }
   } catch (err) {
     console.error('Error saving client:', err);
-    alert('Error saving client: ' + err.message);
+    showToast('Error saving client: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerText = originalText;
   }
 });
 
@@ -1542,11 +1615,13 @@ document.getElementById('followUpSearch')?.addEventListener('input', (e) => {
 
 async function markFollowUpComplete(id) {
   try {
-    await fetch(`/api/followups/${id}/complete`, { method: 'PATCH' });
-    loadTodayFollowUpAgenda();
-    loadAllFollowupsHistory();
+    const res = await fetch(`/api/followups/${id}/complete`, { method: 'PATCH' });
+    if (res.ok) {
+      showToast('Follow-up marked as completed!');
+      await store.refreshAll();
+    }
   } catch (err) {
-    alert('Error marking complete: ' + err.message);
+    showToast('Error marking complete: ' + err.message, 'error');
   }
 }
 
@@ -1554,10 +1629,10 @@ async function deleteFollowUp(id) {
   if (!confirm('Are you sure you want to delete this follow-up record?')) return;
   try {
     await fetch(`/api/followups/${id}`, { method: 'DELETE' });
-    loadTodayFollowUpAgenda();
-    loadAllFollowupsHistory();
+    showToast('Follow-up record deleted!');
+    await store.refreshAll();
   } catch (err) {
-    alert('Error deleting follow-up: ' + err.message);
+    showToast('Error deleting follow-up: ' + err.message, 'error');
   }
 }
 
@@ -1880,6 +1955,14 @@ function closeCREModal() {
 
 document.getElementById('creForm')?.addEventListener('submit', async (e) => {
   e.preventDefault();
+  
+  const btn = e.target.querySelector('button[type="submit"]');
+  const originalText = btn ? btn.innerText : 'Save';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = 'Saving...';
+  }
+
   const body = {
     clientId: document.getElementById('creClientId').value || null,
     clientName: document.getElementById('creClientName').value,
@@ -1902,16 +1985,18 @@ document.getElementById('creForm')?.addEventListener('submit', async (e) => {
     const data = await res.json();
     if (data.success) {
       closeCREModal();
-      loadTodayFollowUpAgenda();
-      loadAllFollowupsHistory();
-      loadScotMonthly();
-      loadFollowUpCalendar();
-      alert('✅ CRE Call & Next Follow-up logged and saved to MongoDB & Calendar!');
+      showToast('CRE Call logged and saved successfully!');
+      await store.refreshAll();
     } else {
-      alert('Error: ' + data.error);
+      showToast('Error: ' + data.error, 'error');
     }
   } catch (err) {
-    alert('Error saving follow-up: ' + err.message);
+    showToast('Error saving follow-up: ' + err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = originalText;
+    }
   }
 });
 
@@ -2414,6 +2499,11 @@ document.getElementById('editClientForm')?.addEventListener('submit', async (e) 
 
   const contactNumber = document.getElementById('drawerContactNumber').value.trim() || (contacts[0]?.phone || '');
 
+  const btn = e.target.querySelector('button[type="submit"]');
+  const originalText = btn.innerText;
+  btn.disabled = true;
+  btn.innerText = 'Saving...';
+
   try {
     // 1. Update Client Core Details
     const clientRes = await fetch(`/api/clients/${clientId}`, {
@@ -2429,7 +2519,9 @@ document.getElementById('editClientForm')?.addEventListener('submit', async (e) 
     });
     const clientData = await clientRes.json();
     if (!clientRes.ok || !clientData.success) {
-      alert('Failed to save company details: ' + (clientData.error || 'Unknown error'));
+      showToast('Failed to save company details: ' + (clientData.error || 'Unknown error'), 'error');
+      btn.disabled = false;
+      btn.innerText = originalText;
       return;
     }
 
@@ -2446,39 +2538,35 @@ document.getElementById('editClientForm')?.addEventListener('submit', async (e) 
     });
     const fuData = await fuRes.json();
     if (!fuRes.ok || !fuData.success) {
-      alert('Failed to update follow-up: ' + (fuData.error || 'Unknown error'));
+      showToast('Failed to update follow-up: ' + (fuData.error || 'Unknown error'), 'error');
+      btn.disabled = false;
+      btn.innerText = originalText;
       return;
     }
 
     closeEditDrawer();
     showToast(`Updated "${clientName}" successfully!`);
 
-    // Update in-memory record so entire page reflects instantly
-    const localRec = currentScotRecords.find(item => item._id === clientId);
-    if (localRec) {
-      localRec.clientName = clientName;
-      localRec.contactNumber = contactNumber;
-      localRec.contacts = contacts;
-      localRec.address = address;
-      localRec.usualOrderGap = usualOrderGap;
-      localRec.followUpTakenBy = followUpTakenBy;
-      localRec.followUpStatus = followUpStatus;
-      localRec.plannedDate = plannedDate || null;
-      localRec.actualDate = actualDate || (followUpStatus === 'Taken / Done' ? new Date().toISOString() : null);
-      localRec.remark = remark;
-    }
-    updateScotSummaryPills(currentScotRecords);
-    applyScotFiltersAndRender();
-    loadTodayFollowUpAgenda();
+    // Force central store to sync and trigger UI refresh across all tabs
+    await store.refreshAll();
   } catch (err) {
-    alert('Error saving client: ' + err.message);
+    showToast('Error saving client: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerText = originalText;
   }
 });
 
 // ==================== CLIENT OVERVIEW / DETAIL DRAWER ==================== //
 function openClientOverviewDrawer(clientId) {
-  const r = currentScotRecords.find(item => item._id === clientId);
-  if (!r) return;
+  // First try scot records for enriched data, then fallback to global store client data
+  let r = currentScotRecords.find(item => item._id === clientId);
+  
+  if (!r) {
+    const baseClient = store.getState().clients.find(c => c._id === clientId);
+    if (!baseClient) return;
+    r = { ...baseClient, status: 'Unknown', totalSales: 0, totalInvoices: 0, daysSinceLastOrder: null };
+  }
 
   document.getElementById('overviewClientName').innerText = r.clientName;
   document.getElementById('overviewClientSubtitle').innerText = `${r.contactNumber || 'No Contact'} • ${r.address || 'No Address'}`;
@@ -2671,13 +2759,68 @@ function initScotTableControls() {
 }
 
 // Attach to DOM ready
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   initTheme();
   initSidebar();
   initAgendaControls();
   initScotTableControls();
-  loadExecutivesList();
-  loadDashboard();
+  
+  // Auto-fill logic for client selection
+  const handleClientNameChange = (inputEl, contactElId, idElId) => {
+    inputEl.addEventListener('change', (e) => {
+      const val = e.target.value.trim().toLowerCase();
+      const client = store.getState().clients.find(c => c.clientName.toLowerCase() === val);
+      if (client) {
+        if (contactElId) {
+          const contactEl = document.getElementById(contactElId);
+          if (contactEl && !contactEl.value) contactEl.value = client.contactNumber || '';
+        }
+        if (idElId) {
+          const idEl = document.getElementById(idElId);
+          if (idEl) idEl.value = client._id;
+        }
+      }
+    });
+  };
+
+  const creClientName = document.getElementById('creClientName');
+  if (creClientName) handleClientNameChange(creClientName, 'creContactNumber', 'creClientId');
+
+  const txClientName = document.getElementById('txClientName');
+  if (txClientName) handleClientNameChange(txClientName, null, null);
+
+  // Period filter logic
+  const periodDropdown = document.getElementById('periodSelectDropdown');
+  if (periodDropdown) {
+    periodDropdown.addEventListener('change', async (e) => {
+      store.setState({ currentPeriod: e.target.value });
+      await store.refreshAll();
+    });
+  }
+
+  // Initial store load
+  await store.refreshAll();
 });
 
+// Global state sync: Whenever store updates, re-render the active tab
+store.subscribe(state => {
+  // Re-populate global dropdowns
+  populateAllExecutiveDropdowns();
+  populateScotExecutiveFilter();
+  populateAgendaExecutiveDropdown();
+  
+  // Re-populate clients datalist
+  const clientsDatalist = document.getElementById('clientsDatalist');
+  if (clientsDatalist) {
+    clientsDatalist.innerHTML = state.clients.map(c => `<option value="${c.clientName}"></option>`).join('');
+  }
+  
+  // Re-render active tab
+  const activeTab = document.querySelector('.nav-link.active')?.getAttribute('data-tab');
+  if (activeTab === 'dashboard') loadDashboard();
+  if (activeTab === 'cre-followups') loadCREFollowUps();
+  if (activeTab === 'calendar-view') loadFollowUpCalendar();
+  if (activeTab === 'scot-monthly') loadScotMonthly();
+  if (activeTab === 'clients') loadClientMaster();
+});
 

@@ -247,7 +247,162 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
-// 2. Client Master API
+// 2. Dashboard Follow-up Execution Stats
+app.get('/api/dashboard/followup-stats', async (req, res) => {
+  try {
+    const { period } = req.query; // 'today', 'week', 'month', 'all'
+    const now = new Date();
+    let startDate = new Date(0); // default to beginning of time
+    let endDate = new Date('2099-12-31T23:59:59.999Z');
+
+    if (period === 'today') {
+      startDate = new Date(now.setHours(0, 0, 0, 0));
+      endDate = new Date(now.setHours(23, 59, 59, 999));
+    } else if (period === 'week') {
+      const day = now.getDay() || 7; // Get current day number, converting Sun. to 7
+      startDate = new Date(now);
+      startDate.setHours(0, 0, 0, 0);
+      startDate.setDate(startDate.getDate() - day + 1); // Monday
+      endDate = new Date(now.setHours(23, 59, 59, 999));
+    } else if (period === 'month') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    }
+
+    // 1. Fetch FollowUps in this period
+    const followupsInPeriod = await FollowUp.find({
+      callDate: { $gte: startDate, $lte: endDate }
+    }).lean();
+
+    // 2. Fetch Clients (for calculating Pending / Overdue)
+    // Overdue = nextFollowUpDate < today (start of today)
+    // Pending = nextFollowUpDate >= today AND <= end of period
+    // Due = Overdue + Pending
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const clients = await Client.find({}, 'clientName followUpStatus nextFollowUpDate followUpTakenBy').lean();
+    
+    let dueCount = 0;
+    let pendingCount = 0;
+    let overdueCount = 0;
+
+    clients.forEach(c => {
+      if (!c.nextFollowUpDate) return;
+      if (c.followUpStatus === 'Taken / Done') return; // already done, not pending
+      
+      const nextDate = new Date(c.nextFollowUpDate);
+      if (nextDate < todayStart) {
+        overdueCount++;
+        dueCount++; // Overdue is part of total Due backlog
+      } else if (nextDate >= startDate && nextDate <= endDate) {
+        pendingCount++;
+        dueCount++;
+      }
+    });
+
+    const callsMade = followupsInPeriod.length;
+    const uniqueClientsContacted = new Set(followupsInPeriod.map(f => f.clientId?.toString())).size;
+    const connectedCalls = followupsInPeriod.filter(f => f.callStatus === 'Connected').length;
+    
+    // Follow-ups Done (Approximation: any log where it was connected or order promised)
+    const followupsDone = followupsInPeriod.filter(f => f.callStatus === 'Connected' || f.callStatus === 'Order Promised').length;
+    
+    // Leads Generated: Expecting order amount > 0
+    const leadsGenerated = followupsInPeriod.filter(f => (f.orderExpectedAmount || 0) > 0).length;
+
+    // Follow-up to Lead Conversion %
+    let conversionPercent = 0;
+    if (followupsDone > 0) {
+      conversionPercent = ((leadsGenerated / followupsDone) * 100).toFixed(1);
+    }
+
+    // Daily Activity Graph Data (Aggregate by day for the period)
+    const dailyActivity = {};
+    followupsInPeriod.forEach(f => {
+      const day = new Date(f.callDate).toISOString().split('T')[0];
+      if (!dailyActivity[day]) dailyActivity[day] = { calls: 0, leads: 0 };
+      dailyActivity[day].calls++;
+      if ((f.orderExpectedAmount || 0) > 0) dailyActivity[day].leads++;
+    });
+
+    // Upcoming Tasks Graph (Today, Tomorrow, Next 7, 15, 30)
+    let upToday = 0, upTomorrow = 0, up7 = 0, up15 = 0, up30 = 0;
+    const tStart = new Date(todayStart);
+    const tmrwStart = new Date(todayStart); tmrwStart.setDate(tmrwStart.getDate() + 1);
+    const d7Start = new Date(todayStart); d7Start.setDate(d7Start.getDate() + 7);
+    const d15Start = new Date(todayStart); d15Start.setDate(d15Start.getDate() + 15);
+    const d30Start = new Date(todayStart); d30Start.setDate(d30Start.getDate() + 30);
+
+    clients.forEach(c => {
+      if (!c.nextFollowUpDate || c.followUpStatus === 'Taken / Done') return;
+      const nd = new Date(c.nextFollowUpDate);
+      if (nd >= tStart && nd < tmrwStart) upToday++;
+      else if (nd >= tmrwStart && nd < new Date(tmrwStart.getTime() + 86400000)) upTomorrow++;
+      else if (nd >= tStart && nd < d7Start) up7++;
+      else if (nd >= tStart && nd < d15Start) up15++;
+      else if (nd >= tStart && nd < d30Start) up30++;
+    });
+
+    // CRE-wise Performance Array
+    const creMap = {};
+    followupsInPeriod.forEach(f => {
+      const cre = f.creName || 'Unassigned';
+      if (!creMap[cre]) creMap[cre] = { calls: 0, connected: 0, followupsDone: 0, leads: 0, pending: 0, overdue: 0, assigned: 0 };
+      
+      creMap[cre].calls++;
+      if (f.callStatus === 'Connected') creMap[cre].connected++;
+      if (f.callStatus === 'Connected' || f.callStatus === 'Order Promised') creMap[cre].followupsDone++;
+      if ((f.orderExpectedAmount || 0) > 0) creMap[cre].leads++;
+    });
+    
+    clients.forEach(c => {
+       const cre = c.followUpTakenBy;
+       if (!cre) return;
+       if (!creMap[cre]) creMap[cre] = { calls: 0, connected: 0, followupsDone: 0, leads: 0, pending: 0, overdue: 0, assigned: 0 };
+       
+       creMap[cre].assigned++;
+       if (c.followUpStatus !== 'Taken / Done' && c.nextFollowUpDate) {
+         const nd = new Date(c.nextFollowUpDate);
+         if (nd < todayStart) creMap[cre].overdue++;
+         else if (nd >= startDate && nd <= endDate) creMap[cre].pending++;
+       }
+    });
+
+    const crePerformance = Object.keys(creMap).map(cre => {
+      const data = creMap[cre];
+      let conv = 0;
+      if (data.followupsDone > 0) conv = ((data.leads / data.followupsDone) * 100).toFixed(1);
+      return { cre, ...data, conversionPercent: conv };
+    });
+
+    res.json({
+      success: true,
+      dueCount,
+      followupsDone,
+      pendingCount,
+      overdueCount,
+      callsMade,
+      uniqueClientsContacted,
+      connectedCalls,
+      leadsGenerated,
+      conversionPercent,
+      dailyActivity,
+      upcomingTasks: {
+        today: upToday,
+        tomorrow: upTomorrow,
+        next7: up7,
+        next15: up15,
+        next30: up30
+      },
+      crePerformance
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. Client Master API
 app.get('/api/clients', async (req, res) => {
   try {
     const { search, limit = 2000 } = req.query;

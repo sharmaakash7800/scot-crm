@@ -116,8 +116,17 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
         </button>
         <div class="page-title">
-          <h1 id="pageHeading">SCOT Analytics Dashboard</h1>
-          <p id="pageSubHeading">Automated FY 2026-27 Client Order & Lost Sales Intelligence</p>
+          <h1 id="pageHeading">SCOT CRM</h1>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; margin-left: 16px; border-left: 1px solid var(--border-color); padding-left: 16px;">
+          <div class="custom-select-wrap">
+            <select id="periodSelectDropdown" class="form-control select-financial-month" style="min-width: 160px; padding-top: 6px; padding-bottom: 6px;">
+              <option value="today" selected>Today</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="all">All Time</option>
+            </select>
+          </div>
         </div>
       </div>
       <div class="header-actions">
@@ -125,10 +134,14 @@
         <button class="btn btn-secondary header-icon-btn" id="btnRefresh" title="Refresh Dashboard Data" aria-label="Refresh Data">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
         </button>
-        <!-- Manage CRE / Doers -->
-        <button class="btn btn-secondary" id="btnManageCRE" title="Manage CRE / Doers Team Members">
-          <span>👥</span>
-          <span class="btn-text-responsive">CRE / Doers</span>
+        <!-- Manage CRE / Doers (icon-only compact button) -->
+        <button class="btn btn-secondary header-icon-btn" id="btnManageCRE" title="Manage CRE / Doers Team Members" aria-label="Manage Team">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
         </button>
         <!-- Log CRE Call -->
         <button class="btn btn-cre-action" id="btnLogCRECall" title="Log Customer Follow-up Call">
@@ -148,83 +161,121 @@
       </div>
     </header>
 
-    <!-- Financial Month Toolbar (Modern Compact SaaS Filter Bar) -->
-    <div class="month-filter-toolbar">
-      <div class="month-toolbar-left">
-        <label for="monthSelectDropdown" class="month-label">
-          <span class="month-label-icon">📅</span>
-          <span>Select Financial Month:</span>
-        </label>
-        <div class="custom-select-wrap">
-          <select id="monthSelectDropdown" class="form-control select-financial-month">
-            <!-- Options populated dynamically -->
-          </select>
-        </div>
-      </div>
-      <div class="month-toolbar-right">
-        <span class="badge badge-active" id="currentMonthBadge">April 2026</span>
-        <span class="fy-tag">FY 2026-27</span>
-      </div>
-    </div>
+    <!-- Financial Month Toolbar Removed (Moved to Header) -->
 
     <!-- TAB 1: DASHBOARD -->
     <section id="tab-dashboard" class="tab-content active">
       <!-- KPI Cards -->
       <div class="kpi-grid">
-        <div class="kpi-card">
+      <div class="kpis-grid" id="followupKpisGrid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 24px;">
+        <!-- Card 1: Due -->
+        <div class="kpi-card" style="border-left: 4px solid var(--accent-primary);">
           <div class="kpi-header">
-            <span class="kpi-title">Total Active Clients</span>
-            <span class="kpi-icon">👥</span>
+            <span class="kpi-title">Total Follow-ups Due</span>
+            <span class="kpi-icon">📅</span>
           </div>
-          <div class="kpi-value" id="kpiTotalClients">-</div>
-          <div class="kpi-subtext">Registered in Client Master</div>
+          <div class="kpi-value" id="kpiFollowUpsDue">0</div>
+          <div class="kpi-subtext">Scheduled for this period</div>
         </div>
-
-        <div class="kpi-card">
+        <!-- Card 2: Completed -->
+        <div class="kpi-card" style="border-left: 4px solid var(--accent-cyan);">
           <div class="kpi-header">
-            <span class="kpi-title">Total Sales (Till Date)</span>
-            <span class="kpi-icon">💰</span>
+            <span class="kpi-title">Follow-ups Completed</span>
+            <span class="kpi-icon">✅</span>
           </div>
-          <div class="kpi-value" id="kpiTotalSales">₹0</div>
-          <div class="kpi-subtext">Cumulative Invoices Booked</div>
+          <div class="kpi-value" id="kpiFollowUpsDone">0</div>
+          <div class="kpi-subtext">Successfully executed</div>
         </div>
-
-        <div class="kpi-card">
+        <!-- Card 3: Pending -->
+        <div class="kpi-card" style="border-left: 4px solid var(--accent-amber);">
           <div class="kpi-header">
-            <span class="kpi-title">Inactive (6+ Months)</span>
-            <span class="kpi-icon" style="color: var(--accent-rose);">⚠️</span>
+            <span class="kpi-title">Follow-ups Pending</span>
+            <span class="kpi-icon">⏳</span>
           </div>
-          <div class="kpi-value" id="kpiInactiveClients" style="color: #fb7185;">-</div>
-          <div class="kpi-subtext" id="kpiInactiveLostSale">Lost Sale: ₹0</div>
+          <div class="kpi-value" id="kpiFollowUpsPending">0</div>
+          <div class="kpi-subtext" style="color: var(--accent-amber);">Requires immediate action</div>
         </div>
-
-        <div class="kpi-card">
+        <!-- Card 4: Overdue -->
+        <div class="kpi-card" style="border-left: 4px solid var(--accent-rose);">
           <div class="kpi-header">
-            <span class="kpi-title">Irregular Order Clients</span>
-            <span class="kpi-icon" style="color: var(--accent-amber);">⏳</span>
+            <span class="kpi-title">Follow-ups Overdue</span>
+            <span class="kpi-icon">⚠️</span>
           </div>
-          <div class="kpi-value" id="kpiIrregularClients" style="color: #fbbf24;">-</div>
-          <div class="kpi-subtext" id="kpiIrregularLostSale">Lost Sale: ₹0</div>
+          <div class="kpi-value" id="kpiFollowUpsOverdue" style="color: var(--accent-rose);">0</div>
+          <div class="kpi-subtext" style="color: var(--accent-rose);">Missed past scheduled dates</div>
+        </div>
+        <!-- Card 5: Calls Made -->
+        <div class="kpi-card" style="border-left: 4px solid var(--accent-indigo);">
+          <div class="kpi-header">
+            <span class="kpi-title">Calls Made / Connected</span>
+            <span class="kpi-icon">📞</span>
+          </div>
+          <div class="kpi-value"><span id="kpiCallsMade">0</span> <span style="font-size: 1.2rem; color: var(--text-muted);">/ <span id="kpiConnectedCalls">0</span></span></div>
+          <div class="kpi-subtext">Total attempts vs. connected</div>
+        </div>
+        <!-- Card 6: Leads / Conversion -->
+        <div class="kpi-card" style="border-left: 4px solid var(--accent-emerald);">
+          <div class="kpi-header">
+            <span class="kpi-title">Leads Generated</span>
+            <span class="kpi-icon">🎯</span>
+          </div>
+          <div class="kpi-value" id="kpiLeadsGenerated">0</div>
+          <div class="kpi-subtext"><span id="kpiConversionPercent" style="font-weight: 700;">0%</span> Conversion Rate</div>
         </div>
       </div>
 
       <!-- Charts Grid -->
-      <div class="charts-grid">
+      <div class="charts-grid" style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 24px;">
         <div class="chart-card">
           <div class="chart-header">
-            <h3>📈 Monthly Sales & Irregular Lost Sales (FY 26-27)</h3>
+            <h3>📈 Daily Follow-up Activity</h3>
           </div>
           <div class="chart-canvas-container">
-            <canvas id="salesTrendChart"></canvas>
+            <canvas id="followUpActivityChart"></canvas>
           </div>
         </div>
 
         <div class="chart-card">
           <div class="chart-header">
-            <h3>🎯 Client Health Distribution</h3>
+            <h3>📊 Follow-up Status Distribution</h3>
           </div>
           <div class="chart-canvas-container">
-            <canvas id="clientHealthChart"></canvas>
+            <canvas id="followUpStatusChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Workload & Table Row -->
+      <div class="charts-grid" style="display: grid; grid-template-columns: 1fr 2fr; gap: 20px; margin-bottom: 24px;">
+        <div class="chart-card">
+          <div class="chart-header">
+            <h3>📅 Upcoming Tasks</h3>
+          </div>
+          <div id="upcomingTasksContainer" style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+            <!-- JS populated -->
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-header">
+            <h3>🏆 CRE-wise Performance</h3>
+          </div>
+          <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
+            <table class="data-table" id="crePerformanceTable">
+              <thead>
+                <tr>
+                  <th>CRE</th>
+                  <th>Calls</th>
+                  <th>Done</th>
+                  <th>Pending</th>
+                  <th>Overdue</th>
+                  <th>Leads</th>
+                  <th>Conv. %</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- Rendered by JS -->
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -365,8 +416,12 @@
             <h3>🎯 Today's Follow-up Agenda</h3>
             <p style="color: var(--text-secondary); font-size: 0.85rem;" id="agendaSubtitle">Scheduled client calls with contact details & notes</p>
           </div>
-          <div style="display: flex; gap: 12px;">
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <button class="btn btn-cre-action" onclick="openCREModal()">+ Log New Call</button>
+            <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="openCREManagementModal()" title="Manage CRE / Doers Team">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Manage Team
+            </button>
           </div>
         </div>
 
@@ -633,14 +688,11 @@
           <table class="data-table" id="clientMasterTable">
             <thead>
               <tr>
-                <th>Unique ID</th>
-                <th>Client Name</th>
+                <th>Client</th>
                 <th>Contact</th>
-                <th>Address</th>
-                <th>Usual Order Gap</th>
                 <th>Next Follow-up</th>
-                <th>Follow-up Status</th>
-                <th>Feedback / Notes</th>
+                <th>Status</th>
+                <th>Last Activity</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -729,7 +781,7 @@
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-          <!-- Left Column: Google Sheets Sync & Excel Dropzone -->
+          <!-- Left Column: Google Sheets Live Link & Excel Dropzone -->
           <div>
             <!-- Google Sheets Live Link Card -->
             <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-glow); border-radius: var(--radius-lg); padding: 22px; margin-bottom: 24px;">
@@ -804,7 +856,7 @@ git push -u origin main</pre>
       <form id="txForm">
         <div class="form-group">
           <label class="form-label">Client Name *</label>
-          <input type="text" class="form-control" id="txClientName" required placeholder="e.g. RAWAT ELECTRICALS">
+          <input type="text" class="form-control" id="txClientName" required placeholder="e.g. RAWAT ELECTRICALS" list="clientsDatalist">
         </div>
         <div class="form-group">
           <label class="form-label">Invoice Date *</label>
@@ -953,7 +1005,7 @@ git push -u origin main</pre>
         
         <div class="form-group">
           <label class="form-label">Customer / Client Name *</label>
-          <input type="text" class="form-control" id="creClientName" required placeholder="e.g. RAWAT ELECTRICALS">
+          <input type="text" class="form-control" id="creClientName" required placeholder="e.g. RAWAT ELECTRICALS" list="clientsDatalist">
         </div>
 
         <div class="form-group">
@@ -1337,6 +1389,12 @@ git push -u origin main</pre>
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- Application Logic -->
-  <script src="app.js"></script>
+  <!-- Unified Toast Notification Container -->
+  <div id="toastContainer" style="position: fixed; bottom: 30px; right: 30px; display: flex; flex-direction: column; gap: 10px; z-index: 9999;"></div>
+
+  <!-- Shared Datalist for Client Auto-Complete -->
+  <datalist id="clientsDatalist"></datalist>
+
+  <script src="/app.js"></script>
 </body>
 </html>
