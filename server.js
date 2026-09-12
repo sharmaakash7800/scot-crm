@@ -1386,22 +1386,37 @@ app.post('/api/sync-google-sheet', async (req, res) => {
     }
 
     // Convert standard Google Sheet URL to direct CSV export link if necessary
-    // Example: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit#gid=0
-    // Becomes: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/export?format=csv
     let exportUrl = sheetUrl.trim();
-    const sheetMatch = exportUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-    if (sheetMatch && sheetMatch[1]) {
-      const sheetId = sheetMatch[1];
-      // Check if gid is present
-      const gidMatch = exportUrl.match(/[#&]gid=([0-9]+)/);
-      const gidParam = gidMatch && gidMatch[1] ? `&gid=${gidMatch[1]}` : '';
-      exportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv${gidParam}`;
+    
+    // Check if it's already a published link (e.g. /d/e/2PACX-... or pub?output=csv)
+    if (exportUrl.includes('/pubhtml')) {
+      exportUrl = exportUrl.replace('/pubhtml', '/pub?output=csv');
+    } else if (exportUrl.includes('/d/e/')) {
+      // Published Google Sheet link format: keep as-is or ensure output=csv
+      if (!exportUrl.includes('output=csv')) {
+        exportUrl += (exportUrl.includes('?') ? '&' : '?') + 'output=csv';
+      }
+    } else {
+      // Standard Google Sheet URL format:
+      // Example: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit#gid=0
+      // Becomes: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/export?format=csv
+      const sheetMatch = exportUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      if (sheetMatch && sheetMatch[1] && sheetMatch[1] !== 'e') {
+        const sheetId = sheetMatch[1];
+        // Check if gid is present
+        const gidMatch = exportUrl.match(/[#&]gid=([0-9]+)/);
+        const gidParam = gidMatch && gidMatch[1] ? `&gid=${gidMatch[1]}` : '';
+        exportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv${gidParam}`;
+      }
     }
 
     console.log(`Connecting and fetching Google Sheet from: ${exportUrl}`);
-    const fetchResponse = await fetch(exportUrl);
+    const fetchResponse = await fetch(exportUrl, {
+      redirect: 'follow',
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+    });
     if (!fetchResponse.ok) {
-      throw new Error(`Failed to fetch Google Sheet: ${fetchResponse.statusText}. Please ensure sheet link sharing is set to "Anyone with the link can view".`);
+      throw new Error(`Failed to fetch Google Sheet: ${fetchResponse.status} ${fetchResponse.statusText}. Please ensure sheet is published to web or sharing is set to "Anyone with the link can view".`);
     }
 
     const csvText = await fetchResponse.text();
@@ -1409,17 +1424,23 @@ app.post('/api/sync-google-sheet', async (req, res) => {
     const sheetName = workbook.SheetNames[0];
     const rows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
 
-    if (!rows || rows.length < 2) {
-      return res.status(400).json({ success: false, error: 'Google Sheet appears empty or has no header row.' });
+    if (!rows || rows.length === 0) {
+      return res.status(400).json({ success: false, error: 'Google Sheet is empty. Please add your header row and client data in Google Sheets.' });
+    }
+
+    if (rows.length < 2) {
+      return res.status(400).json({ success: false, error: 'Google Sheet only has headers but no data rows. Please add records to your sheet.' });
     }
 
     // Determine data type by examining headers
     const headerRow = rows[0].map(h => String(h || '').toLowerCase().trim());
     let importedClients = 0;
     let importedTransactions = 0;
+    let importedFollowups = 0;
 
-    const isTxSheet = headerRow.some(h => h.includes('amount') || h.includes('invoice'));
-    const isClientSheet = headerRow.some(h => h.includes('client') || h.includes('customer') || h.includes('name'));
+    const isTxSheet = headerRow.some(h => h.includes('invoice') || (h.includes('amount') && !h.includes('follow')));
+    const isFollowupSheet = headerRow.some(h => h.includes('follow') || h.includes('cre') || h.includes('doer') || h.includes('remark'));
+    const isClientSheet = headerRow.some(h => h.includes('client') || h.includes('customer') || h.includes('vendor') || h.includes('name'));
 
     if (isTxSheet) {
       // Import as Transactions
@@ -1450,19 +1471,35 @@ app.post('/api/sync-google-sheet', async (req, res) => {
         importedTransactions = txs.length;
       }
     } else if (isClientSheet) {
-      // Import as Clients
-      const nameIdx = headerRow.findIndex(h => h.includes('name') || h.includes('client') || h.includes('customer'));
+      // Import as Clients / Vendors & FollowUps if applicable
+      const nameIdx = headerRow.findIndex(h => h.includes('name') || h.includes('client') || h.includes('customer') || h.includes('vendor'));
+      const typeIdx = headerRow.findIndex(h => h.includes('type') || h.includes('category'));
       const contactIdx = headerRow.findIndex(h => h.includes('contact') || h.includes('phone') || h.includes('mobile'));
-      const addrIdx = headerRow.findIndex(h => h.includes('address') || h.includes('location'));
+      const addrIdx = headerRow.findIndex(h => h.includes('address') || h.includes('location') || h.includes('city'));
       const gapIdx = headerRow.findIndex(h => h.includes('gap') || h.includes('usual'));
+      const creIdx = headerRow.findIndex(h => h.includes('cre') || h.includes('doer') || h.includes('executive') || h.includes('assign'));
+      const statusIdx = headerRow.findIndex(h => h.includes('status'));
+      const remarksIdx = headerRow.findIndex(h => h.includes('remark') || h.includes('note') || h.includes('comment'));
 
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
         if (!row || !row[nameIdx]) continue;
         const cName = String(row[nameIdx]).trim();
+        if (!cName) continue;
+
         const contact = contactIdx !== -1 && row[contactIdx] ? String(row[contactIdx]).trim() : '';
         const address = addrIdx !== -1 && row[addrIdx] ? String(row[addrIdx]).trim() : '';
         const gap = gapIdx !== -1 ? cleanNumber(row[gapIdx]) : 0;
+        let cType = 'Client';
+        if (typeIdx !== -1 && row[typeIdx]) {
+          const tVal = String(row[typeIdx]).toLowerCase();
+          if (tVal.includes('vendor') || tVal.includes('supplier')) {
+            cType = 'Vendor';
+          }
+        }
+        const cre = creIdx !== -1 && row[creIdx] ? String(row[creIdx]).trim() : '';
+        const status = statusIdx !== -1 && row[statusIdx] ? String(row[statusIdx]).trim() : 'Pending';
+        const remarks = remarksIdx !== -1 && row[remarksIdx] ? String(row[remarksIdx]).trim() : '';
 
         await Client.findOneAndUpdate(
           { clientName: { $regex: `^${cName}$`, $options: 'i' } },
@@ -1471,19 +1508,33 @@ app.post('/api/sync-google-sheet', async (req, res) => {
               uniqueId: `Scot${String(Date.now()).slice(-4)}${i}`
             },
             clientName: cName,
+            clientType: cType,
             contactNumber: contact,
             address,
-            usualOrderGap: gap
+            usualOrderGap: gap,
+            assignedExecutive: cre || 'CRE Executive'
           },
           { upsert: true }
         );
         importedClients++;
+
+        // Also create a Follow-up record if this row includes CRE or follow-up details
+        if (isFollowupSheet || cre || remarks) {
+          await FollowUp.create({
+            clientName: cName,
+            creName: cre || 'CRE Executive',
+            followUpDate: new Date(),
+            status: status || 'Pending',
+            remarks: remarks || 'Imported from Google Sheet sync'
+          });
+          importedFollowups++;
+        }
       }
     }
 
     res.json({
       success: true,
-      message: `Google Sheet synced successfully! Processed ${rows.length - 1} rows (${importedTransactions} transactions, ${importedClients} clients).`
+      message: `Google Sheet synced successfully! Processed ${rows.length - 1} rows (${importedClients} clients/vendors, ${importedTransactions} transactions, ${importedFollowups} follow-ups synced).`
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
