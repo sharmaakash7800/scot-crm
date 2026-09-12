@@ -2386,19 +2386,42 @@ const APPS_SCRIPT_SNIPPET = `function doPost(e) {
   }
 }`;
 
-// Load saved webhook on page load
-document.addEventListener('DOMContentLoaded', () => {
+// Load saved settings from MongoDB & localStorage on page load
+async function loadSavedGoogleSettings() {
+  try {
+    const res = await fetch('/api/settings');
+    const data = await res.json();
+    if (data.success && data.settings) {
+      if (data.settings.google_webhook_url) {
+        localStorage.setItem('scot_google_webhook_url', data.settings.google_webhook_url);
+        const input = document.getElementById('googleSheetWebhookUrlInput');
+        if (input) input.value = data.settings.google_webhook_url;
+      }
+      if (data.settings.google_sheet_url) {
+        localStorage.setItem('scot_google_sheet_url', data.settings.google_sheet_url);
+        const input = document.getElementById('googleSheetUrlInput');
+        if (input) input.value = data.settings.google_sheet_url;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not load settings from server:', err);
+  }
+
+  // Fallback to localStorage if not yet set
   const savedWebhook = localStorage.getItem('scot_google_webhook_url');
   if (savedWebhook) {
     const input = document.getElementById('googleSheetWebhookUrlInput');
-    if (input) input.value = savedWebhook;
+    if (input && !input.value) input.value = savedWebhook;
   }
   const savedSheetUrl = localStorage.getItem('scot_google_sheet_url');
   if (savedSheetUrl) {
     const input = document.getElementById('googleSheetUrlInput');
-    if (input) input.value = savedSheetUrl;
+    if (input && !input.value) input.value = savedSheetUrl;
   }
-});
+}
+
+document.addEventListener('DOMContentLoaded', loadSavedGoogleSettings);
+window.addEventListener('load', loadSavedGoogleSettings);
 
 // Helper: send event data to Google Sheet webhook in background
 async function pushToGoogleSheetWebhook(payload) {
@@ -2437,20 +2460,37 @@ function copyAppsScriptCode() {
 
 document.getElementById('btnShowScriptModal')?.addEventListener('click', openGoogleScriptModal);
 
-document.getElementById('btnSaveGoogleWebhook')?.addEventListener('click', () => {
+document.getElementById('btnSaveGoogleWebhook')?.addEventListener('click', async () => {
   const input = document.getElementById('googleSheetWebhookUrlInput');
   const status = document.getElementById('googleWebhookStatus');
   const val = (input?.value || '').trim();
 
   if (!val) {
     localStorage.removeItem('scot_google_webhook_url');
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'google_webhook_url', value: '' })
+    }).catch(() => {});
     status.innerHTML = '<span style="color: var(--text-muted);">Webhook cleared. Auto-save disabled.</span>';
     return;
   }
 
   localStorage.setItem('scot_google_webhook_url', val);
-  status.innerHTML = '<span style="color: #10b981;">✅ Webhook saved! All future CRM clients & follow-ups will auto-save to Google Sheet!</span>';
-  showToast('Google Sheet Webhook activated for live auto-sync!', 'success');
+  
+  // Permanently save to MongoDB database so it never resets or removes on reload
+  try {
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'google_webhook_url', value: val })
+    });
+  } catch (e) {
+    console.warn('Server settings save notice:', e);
+  }
+
+  status.innerHTML = '<span style="color: #10b981;">✅ Webhook permanently saved in Database! All CRM clients & follow-ups will auto-save to Google Sheet!</span>';
+  showToast('Google Sheet Webhook permanently activated!', 'success');
 });
 
 document.getElementById('btnSyncGoogleSheet')?.addEventListener('click', async () => {

@@ -12,6 +12,7 @@ const Transaction = require('./models/Transaction');
 const Enquiry = require('./models/Enquiry');
 const FollowUp = require('./models/FollowUp');
 const Executive = require('./models/Executive');
+const SystemConfig = require('./models/SystemConfig');
 const { importExcelData, cleanNumber, parseDate } = require('./import_excel');
 
 const app = express();
@@ -1542,10 +1543,46 @@ app.post('/api/sync-google-sheet', async (req, res) => {
       }
     }
 
+    // Auto-save Google Sheet URL to MongoDB SystemConfig
+    await SystemConfig.findOneAndUpdate(
+      { key: 'google_sheet_url' },
+      { key: 'google_sheet_url', value: sheetUrl.trim(), updatedAt: new Date() },
+      { upsert: true }
+    );
+
     res.json({
       success: true,
       message: `Google Sheet synced successfully! Processed ${rows.length - 1} rows (${importedClients} clients/vendors, ${importedTransactions} transactions, ${importedFollowups} follow-ups synced).`
     });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Settings & Config API (Persists in MongoDB)
+app.get('/api/settings', async (req, res) => {
+  try {
+    const configs = await SystemConfig.find().lean();
+    const settings = {};
+    configs.forEach(c => {
+      settings[c.key] = c.value;
+    });
+    res.json({ success: true, settings });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/settings', async (req, res) => {
+  try {
+    const { key, value } = req.body;
+    if (!key) return res.status(400).json({ success: false, error: 'Key is required' });
+    const config = await SystemConfig.findOneAndUpdate(
+      { key },
+      { key, value: String(value || ''), updatedAt: new Date() },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true, config });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
