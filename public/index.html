@@ -84,8 +84,16 @@
       </li>
     </ul>
 
-    <!-- Sidebar Bottom Controls: Theme Mode Toggle & Database Status -->
+    <!-- Sidebar Bottom Controls: Customize Menu, Theme Mode Toggle & Database Status -->
     <div class="sidebar-footer">
+      <div class="theme-switch-item" id="btnCustomizeSidebar" title="Hide or show navigation tabs" role="button" tabindex="0" onclick="openSidebarCustomizerModal()">
+        <span class="theme-icon">⚙️</span>
+        <div class="theme-info">
+          <strong>Customize Tabs</strong>
+          <span style="font-size: 0.7rem; color: var(--text-muted);">Hide / Show Options</span>
+        </div>
+      </div>
+
       <div class="theme-switch-item" id="btnThemeToggle" title="Toggle Day / Night Mode" role="button" tabindex="0">
         <span class="theme-icon" id="themeToggleIcon">☀️</span>
         <div class="theme-info">
@@ -1424,6 +1432,28 @@ git push -u origin main</pre>
           <button type="submit" class="btn btn-primary">Confirm Reassign</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal: Customize Sidebar Navigation Tabs (Hide / Show) -->
+  <div class="modal-overlay" id="sidebarCustomizerModal">
+    <div class="modal-content" style="max-width: 460px;">
+      <div class="modal-header">
+        <div>
+          <h3>⚙️ Customize Sidebar Menu</h3>
+          <p style="color: var(--text-secondary); font-size: 0.82rem; margin-top: 2px;">Check or uncheck tabs to show/hide in the sidebar</p>
+        </div>
+        <button class="close-btn" onclick="closeSidebarCustomizerModal()">&times;</button>
+      </div>
+
+      <div id="sidebarTabsToggleList" style="display: flex; flex-direction: column; gap: 8px; margin: 16px 0; max-height: 50vh; overflow-y: auto;">
+        <!-- Filled dynamically by JavaScript -->
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 14px; margin-top: 10px;">
+        <button type="button" class="btn btn-secondary" onclick="resetSidebarVisibility()">Show All Tabs</button>
+        <button type="button" class="btn btn-primary" onclick="closeSidebarCustomizerModal()">Done</button>
+      </div>
     </div>
   </div>
 

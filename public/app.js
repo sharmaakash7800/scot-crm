@@ -112,6 +112,88 @@ function getStatusBadge(status) {
   return `<span class="badge badge-none"><span class="badge-dot">●</span> ${status}</span>`;
 }
 
+// ==================== SIDEBAR VISIBILITY CUSTOMIZER ==================== //
+const SIDEBAR_TABS_CONFIG = [
+  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+  { id: 'cre-followups', label: 'CRE Follow-ups', icon: '📞' },
+  { id: 'calendar-view', label: 'Follow-up Calendar', icon: '🗓️' },
+  { id: 'scot-monthly', label: 'Monthly SCOT', icon: '📅' },
+  { id: 'monthly-loss', label: 'Loss & Leaking', icon: '📉' },
+  { id: 'clients', label: 'Client Master', icon: '👥' },
+  { id: 'transactions', label: 'Transactions', icon: '💳' },
+  { id: 'enquiries', label: 'Enquiry Capture', icon: '📋' },
+  { id: 'import-export', label: 'Excel Sync & Git', icon: '🔄' }
+];
+
+function getHiddenTabs() {
+  try {
+    const raw = localStorage.getItem('scot_hidden_sidebar_tabs');
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveHiddenTabs(hiddenList) {
+  localStorage.setItem('scot_hidden_sidebar_tabs', JSON.stringify(hiddenList));
+  applySidebarVisibility();
+}
+
+function applySidebarVisibility() {
+  const hidden = getHiddenTabs();
+  document.querySelectorAll('.nav-links li').forEach(li => {
+    const link = li.querySelector('.nav-link');
+    if (!link) return;
+    const tabId = link.getAttribute('data-tab');
+    if (hidden.includes(tabId)) {
+      li.style.display = 'none';
+    } else {
+      li.style.display = '';
+    }
+  });
+}
+
+function openSidebarCustomizerModal() {
+  const hidden = getHiddenTabs();
+  const listContainer = document.getElementById('sidebarTabsToggleList');
+  if (!listContainer) return;
+
+  listContainer.innerHTML = SIDEBAR_TABS_CONFIG.map(tab => {
+    const isVisible = !hidden.includes(tab.id);
+    return `
+      <label style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-md); cursor: pointer; user-select: none;">
+        <span style="display: flex; align-items: center; gap: 10px; font-weight: 500;">
+          <span style="font-size: 1.1rem;">${tab.icon}</span>
+          <span>${tab.label}</span>
+        </span>
+        <input type="checkbox" ${isVisible ? 'checked' : ''} onchange="toggleSidebarTabVisibility('${tab.id}', this.checked)" style="width: 18px; height: 18px; cursor: pointer;">
+      </label>
+    `;
+  }).join('');
+
+  document.getElementById('sidebarCustomizerModal')?.classList.add('active');
+}
+
+function closeSidebarCustomizerModal() {
+  document.getElementById('sidebarCustomizerModal')?.classList.remove('active');
+}
+
+function toggleSidebarTabVisibility(tabId, isChecked) {
+  let hidden = getHiddenTabs();
+  if (isChecked) {
+    hidden = hidden.filter(id => id !== tabId);
+  } else {
+    if (!hidden.includes(tabId)) hidden.push(tabId);
+  }
+  saveHiddenTabs(hidden);
+}
+
+function resetSidebarVisibility() {
+  saveHiddenTabs([]);
+  openSidebarCustomizerModal(); // refresh checkboxes
+  showToast('All sidebar tabs are now visible');
+}
+
 // Navigation & Tab Switching
 function switchTab(tabId) {
   document.querySelectorAll('.nav-link').forEach(link => {
@@ -3036,6 +3118,9 @@ window.addEventListener('DOMContentLoaded', async () => {
       }
     });
   }
+
+  // Apply saved sidebar hidden tabs preferences
+  applySidebarVisibility();
 
   // Initial store load
   await store.refreshAll();
