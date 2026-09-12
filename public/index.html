@@ -825,17 +825,46 @@
                 </div>
               </div>
 
-              <div class="form-group">
-                <label class="form-label">Google Sheet Shareable Link (Anyone with link can view) *</label>
-                <input type="url" class="form-control" id="googleSheetUrlInput" placeholder="https://docs.google.com/spreadsheets/d/your-sheet-id/edit#gid=0">
+              <div class="form-group" style="margin-bottom: 12px;">
+                <label class="form-label" style="display: flex; justify-content: space-between;">
+                  <span>Google Sheet URL (Share Link or Web Published Link) *</span>
+                </label>
+                <input type="url" class="form-control" id="googleSheetUrlInput" placeholder="https://docs.google.com/spreadsheets/d/14V2iDg5XdWH.../edit">
+                <small style="color: var(--text-muted); font-size: 0.76rem; display: block; margin-top: 4px;">
+                  💡 <b>Tip:</b> Browser ke address bar se direct spreadsheet link copy karke paste karein. Ensure karein Sheet blank na ho.
+                </small>
               </div>
 
-              <div style="display: flex; gap: 10px;">
+              <div style="display: flex; gap: 10px; margin-bottom: 16px;">
                 <button class="btn btn-primary" id="btnSyncGoogleSheet" style="background: linear-gradient(135deg, #059669, #10b981); flex: 1;">
-                  🔄 Fetch & Sync Google Sheet Now
+                  🔄 Fetch & Sync from Google Sheet Now
                 </button>
               </div>
-              <div id="googleSheetSyncStatus" style="margin-top: 10px; font-size: 0.85rem;"></div>
+              <div id="googleSheetSyncStatus" style="margin-top: -6px; margin-bottom: 14px; font-size: 0.85rem;"></div>
+
+              <!-- Google Sheets Auto-Save Webhook (Web -> Google Sheet 2-Way Sync) -->
+              <div style="background: rgba(16, 185, 129, 0.05); border: 1px dashed rgba(16, 185, 129, 0.3); border-radius: var(--radius-md); padding: 14px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                  <span style="font-weight: 600; font-size: 0.88rem; color: #34d399;">⚡ Auto-Save Web CRM to Google Sheet</span>
+                  <span class="badge badge-active" style="font-size: 0.72rem;">2-Way Sync</span>
+                </div>
+                <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 10px;">
+                  Jo bhi client, vendor ya follow-up CRM me add hoga, wo Google Sheet me automatically new row ban kar insert ho jayega!
+                </p>
+                <div class="form-group" style="margin-bottom: 10px;">
+                  <label class="form-label" style="font-size: 0.78rem;">Google Apps Script Webhook URL (Optional):</label>
+                  <input type="url" class="form-control" id="googleSheetWebhookUrlInput" placeholder="https://script.google.com/macros/s/.../exec" style="font-size: 0.82rem; padding: 8px 12px;">
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn btn-secondary btn-action-sm" id="btnSaveGoogleWebhook" style="font-size: 0.78rem; padding: 6px 14px;">
+                    💾 Save Webhook
+                  </button>
+                  <button class="btn btn-outline btn-action-sm" id="btnShowScriptModal" style="font-size: 0.78rem; padding: 6px 14px;">
+                    📋 Get Google Apps Script Code
+                  </button>
+                </div>
+                <div id="googleWebhookStatus" style="margin-top: 8px; font-size: 0.8rem;"></div>
+              </div>
             </div>
 
             <!-- Excel Dropzone -->
@@ -1453,6 +1482,30 @@ git push -u origin main</pre>
       <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 14px; margin-top: 10px;">
         <button type="button" class="btn btn-secondary" onclick="resetSidebarVisibility()">Show All Tabs</button>
         <button type="button" class="btn btn-primary" onclick="closeSidebarCustomizerModal()">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Google Apps Script Code for 2-Way Sync -->
+  <div class="modal-overlay" id="googleScriptModal">
+    <div class="modal-content" style="max-width: 600px;">
+      <div class="modal-header">
+        <div>
+          <h3>📋 Google Apps Script (2-Way Auto-Sync)</h3>
+          <p style="color: var(--text-secondary); font-size: 0.82rem; margin-top: 2px;">CRM me save hua data Google Sheet me row bankar add ho jayega</p>
+        </div>
+        <button class="close-btn" onclick="closeGoogleScriptModal()">&times;</button>
+      </div>
+      <div style="font-size: 0.84rem; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.5;">
+        <b>Sirf 3 steps me setup karein:</b><br>
+        1. Google Sheet me <b>Extensions &gt; Apps Script</b> open karein.<br>
+        2. Yeh code paste karein aur <b>Deploy &gt; New deployment &gt; Web app</b> select karein.<br>
+        3. Who has access: <b>"Anyone"</b> karke deploy karein aur Webhook URL CRM me daal kar <b>"Save Webhook"</b> click karein!
+      </div>
+      <textarea id="appsScriptCodeBlock" readonly style="width: 100%; height: 170px; background: #070b14; color: #34d399; font-family: monospace; font-size: 0.78rem; padding: 12px; border: 1px solid var(--border-glow); border-radius: 8px; resize: none;"></textarea>
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+        <button type="button" class="btn btn-secondary" onclick="copyAppsScriptCode()">📋 Copy Script Code</button>
+        <button type="button" class="btn btn-primary" onclick="closeGoogleScriptModal()">Done</button>
       </div>
     </div>
   </div>

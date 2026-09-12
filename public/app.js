@@ -1436,6 +1436,17 @@ document.getElementById('clientForm')?.addEventListener('submit', async (e) => {
     if (res.ok && data.success) {
       closeClientModal();
       showToast('Client data saved & updated successfully!');
+      // Auto-save to Google Sheet if Webhook is enabled
+      pushToGoogleSheetWebhook({
+        type: partyType,
+        clientType: partyType,
+        clientName: body.clientName,
+        contactNumber: body.contactNumber,
+        address: body.address,
+        assignedExecutive: body.followUpTakenBy,
+        status: body.followUpStatus,
+        remarks: body.lastFeedback
+      });
       await store.refreshAll();
     } else {
       showToast('Failed to save client: ' + (data.error || 'Unknown error'), 'error');
@@ -2267,6 +2278,17 @@ document.getElementById('creForm')?.addEventListener('submit', async (e) => {
     if (data.success) {
       closeCREModal();
       showToast('CRE Call logged and saved successfully!');
+      // Auto-push follow-up to Google Sheets
+      pushToGoogleSheetWebhook({
+        type: 'Follow-Up / Call',
+        clientName: body.clientName,
+        contactNumber: body.contactNumber,
+        creName: body.creName,
+        callStatus: body.callStatus,
+        status: body.callStatus,
+        customerFeedback: body.customerFeedback,
+        remarks: body.customerFeedback
+      });
       await store.refreshAll();
     } else {
       showToast('Error: ' + data.error, 'error');
@@ -2333,7 +2355,104 @@ document.getElementById('quickFollowUpForm')?.addEventListener('submit', async (
   }
 });
 
-// ==================== GOOGLE SHEETS LIVE SYNC ==================== //
+// ==================== GOOGLE SHEETS LIVE SYNC & 2-WAY AUTO-SAVE ==================== //
+// Apps Script template code
+const APPS_SCRIPT_SNIPPET = `function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getActiveSheet();
+    
+    // Auto-create headers if sheet is empty
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(["Timestamp", "Type", "Client / Vendor Name", "Contact", "Address", "CRE / Doer", "Status", "Remarks / Feedback"]);
+    }
+    
+    // Append the new activity / client row
+    sheet.appendRow([
+      new Date().toLocaleString(),
+      data.clientType || data.type || "Client",
+      data.clientName || "",
+      data.contactNumber || "",
+      data.address || "",
+      data.creName || data.assignedExecutive || "",
+      data.status || data.callStatus || "Pending",
+      data.remarks || data.customerFeedback || ""
+    ]);
+    
+    return ContentService.createTextOutput(JSON.stringify({ status: "success" })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+  }
+}`;
+
+// Load saved webhook on page load
+document.addEventListener('DOMContentLoaded', () => {
+  const savedWebhook = localStorage.getItem('scot_google_webhook_url');
+  if (savedWebhook) {
+    const input = document.getElementById('googleSheetWebhookUrlInput');
+    if (input) input.value = savedWebhook;
+  }
+  const savedSheetUrl = localStorage.getItem('scot_google_sheet_url');
+  if (savedSheetUrl) {
+    const input = document.getElementById('googleSheetUrlInput');
+    if (input) input.value = savedSheetUrl;
+  }
+});
+
+// Helper: send event data to Google Sheet webhook in background
+async function pushToGoogleSheetWebhook(payload) {
+  const webhookUrl = (localStorage.getItem('scot_google_webhook_url') || '').trim();
+  if (!webhookUrl) return;
+
+  try {
+    fetch(webhookUrl, {
+      method: 'POST',
+      mode: 'no-cors', // Google Apps Script redirects require no-cors for client-side fetches
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(err => console.warn('Google Sheet webhook auto-save notice:', err));
+  } catch (e) {
+    console.warn('Webhook dispatch error:', e);
+  }
+}
+
+// Modal open / close for Google Apps Script Code
+function openGoogleScriptModal() {
+  const textarea = document.getElementById('appsScriptCodeBlock');
+  if (textarea) textarea.value = APPS_SCRIPT_SNIPPET;
+  document.getElementById('googleScriptModal')?.classList.add('active');
+}
+function closeGoogleScriptModal() {
+  document.getElementById('googleScriptModal')?.classList.remove('active');
+}
+function copyAppsScriptCode() {
+  const textarea = document.getElementById('appsScriptCodeBlock');
+  if (textarea) {
+    textarea.select();
+    navigator.clipboard.writeText(textarea.value);
+    showToast('Apps Script code copied to clipboard! Paste it into Google Sheets > Extensions > Apps Script.', 'success');
+  }
+}
+
+document.getElementById('btnShowScriptModal')?.addEventListener('click', openGoogleScriptModal);
+
+document.getElementById('btnSaveGoogleWebhook')?.addEventListener('click', () => {
+  const input = document.getElementById('googleSheetWebhookUrlInput');
+  const status = document.getElementById('googleWebhookStatus');
+  const val = (input?.value || '').trim();
+
+  if (!val) {
+    localStorage.removeItem('scot_google_webhook_url');
+    status.innerHTML = '<span style="color: var(--text-muted);">Webhook cleared. Auto-save disabled.</span>';
+    return;
+  }
+
+  localStorage.setItem('scot_google_webhook_url', val);
+  status.innerHTML = '<span style="color: #10b981;">✅ Webhook saved! All future CRM clients & follow-ups will auto-save to Google Sheet!</span>';
+  showToast('Google Sheet Webhook activated for live auto-sync!', 'success');
+});
+
 document.getElementById('btnSyncGoogleSheet')?.addEventListener('click', async () => {
   const urlInput = document.getElementById('googleSheetUrlInput');
   const statusDiv = document.getElementById('googleSheetSyncStatus');
@@ -2344,6 +2463,7 @@ document.getElementById('btnSyncGoogleSheet')?.addEventListener('click', async (
     return;
   }
 
+  localStorage.setItem('scot_google_sheet_url', sheetUrl);
   statusDiv.innerHTML = '<span style="color: var(--accent-cyan);">⏳ Connecting to Google Sheets and syncing data to MongoDB...</span>';
 
   try {
@@ -2358,6 +2478,7 @@ document.getElementById('btnSyncGoogleSheet')?.addEventListener('click', async (
       statusDiv.innerHTML = `<span style="color: #10b981;">✅ ${data.message}</span>`;
       loadDashboard();
       loadTodayFollowUpAgenda();
+      loadClients();
     } else {
       statusDiv.innerHTML = `<span style="color: #f43f5e;">❌ ${data.error}</span>`;
     }

@@ -1385,25 +1385,23 @@ app.post('/api/sync-google-sheet', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Google Sheet URL is required' });
     }
 
-    // Convert standard Google Sheet URL to direct CSV export link if necessary
+    // 1. Check if user provided a Google Apps Script Webhook URL (used for 2-way sync)
+    // 2. Normal Google Sheet URL or Publish link
     let exportUrl = sheetUrl.trim();
     
-    // Check if it's already a published link (e.g. /d/e/2PACX-... or pub?output=csv)
+    // Check if it's a published link (e.g. /d/e/2PACX-... or pub?output=csv)
     if (exportUrl.includes('/pubhtml')) {
       exportUrl = exportUrl.replace('/pubhtml', '/pub?output=csv');
     } else if (exportUrl.includes('/d/e/')) {
-      // Published Google Sheet link format: keep as-is or ensure output=csv
       if (!exportUrl.includes('output=csv')) {
         exportUrl += (exportUrl.includes('?') ? '&' : '?') + 'output=csv';
       }
     } else {
       // Standard Google Sheet URL format:
-      // Example: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit#gid=0
-      // Becomes: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/export?format=csv
+      // Example: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit...
       const sheetMatch = exportUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
       if (sheetMatch && sheetMatch[1] && sheetMatch[1] !== 'e') {
         const sheetId = sheetMatch[1];
-        // Check if gid is present
         const gidMatch = exportUrl.match(/[#&]gid=([0-9]+)/);
         const gidParam = gidMatch && gidMatch[1] ? `&gid=${gidMatch[1]}` : '';
         exportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv${gidParam}`;
@@ -1416,20 +1414,27 @@ app.post('/api/sync-google-sheet', async (req, res) => {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
     });
     if (!fetchResponse.ok) {
-      throw new Error(`Failed to fetch Google Sheet: ${fetchResponse.status} ${fetchResponse.statusText}. Please ensure sheet is published to web or sharing is set to "Anyone with the link can view".`);
+      throw new Error(`Google Sheet fetch error (${fetchResponse.status} ${fetchResponse.statusText}). Agar aapne "Publish to web" kiya hai to browser tab me spreadsheet ka normal Share link ("https://docs.google.com/spreadsheets/d/.../edit") copy karke paste karein aur ensure karein sharing "Anyone with the link can view" ho.`);
     }
 
     const csvText = await fetchResponse.text();
+    if (!csvText || !csvText.trim()) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Google Sheet completely blank/empty hai! Spreadsheet me kam se kam row 1 par headers (jaise Client Name, Contact, Address, etc.) aur kuch data rows daalein, fir sync karein.' 
+      });
+    }
+
     const workbook = xlsx.read(csvText, { type: 'string' });
     const sheetName = workbook.SheetNames[0];
     const rows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 });
 
-    if (!rows || rows.length === 0) {
-      return res.status(400).json({ success: false, error: 'Google Sheet is empty. Please add your header row and client data in Google Sheets.' });
+    if (!rows || rows.length === 0 || (rows.length === 1 && rows[0].length === 0)) {
+      return res.status(400).json({ success: false, error: 'Google Sheet is empty. Please add column headers and rows in your sheet.' });
     }
 
     if (rows.length < 2) {
-      return res.status(400).json({ success: false, error: 'Google Sheet only has headers but no data rows. Please add records to your sheet.' });
+      return res.status(400).json({ success: false, error: 'Google Sheet me sirf 1 header row mili, koi data rows nahi hain. Please Google Sheet me records add karein.' });
     }
 
     // Determine data type by examining headers
