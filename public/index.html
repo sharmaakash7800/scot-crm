@@ -449,12 +449,17 @@
       <div class="glass-panel">
         <div class="panel-header">
           <div>
-            <h3>📝 Customer Feedback & Call History</h3>
-            <p style="color: var(--text-secondary); font-size: 0.85rem;">Complete history of customer calls, feedback, and expected orders</p>
+            <h3>📝 Customer Feedback & Plan vs Actual Call History</h3>
+            <p style="color: var(--text-secondary); font-size: 0.85rem;">Complete history of planned vs actual calls, delays, feedback, and expected orders</p>
           </div>
-          <div class="search-input-wrap">
-            <span class="search-icon">🔍</span>
-            <input type="text" class="search-input" id="followUpSearch" placeholder="Search by customer or CRE...">
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <div class="search-input-wrap">
+              <span class="search-icon">🔍</span>
+              <input type="text" class="search-input" id="followUpSearch" placeholder="Search by customer or CRE...">
+            </div>
+            <button class="btn btn-primary" id="btnExportFollowupsMIS" style="background: linear-gradient(135deg, #0284c7, #06b6d4); padding: 7px 14px; font-size: 0.82rem;">
+              📥 Export MIS Report (Excel)
+            </button>
           </div>
         </div>
 

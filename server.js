@@ -1308,6 +1308,51 @@ app.get('/api/export/scot/:monthKey', async (req, res) => {
   }
 });
 
+// 8.1 Export Follow-ups MIS Report (Plan vs Actual)
+app.get('/api/export/followups-mis', async (req, res) => {
+  try {
+    const followups = await FollowUp.find().sort({ callDate: -1, createdAt: -1 }).lean();
+    
+    const exportData = followups.map(f => {
+      let planDateStr = f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toISOString().split('T')[0] : 'Not Set';
+      let actDateStr = f.callDate ? new Date(f.callDate).toISOString().split('T')[0] : '';
+      let delayText = 'On Time';
+      if (f.nextFollowUpDate && f.callDate) {
+        const diffDays = Math.floor((new Date(f.callDate) - new Date(f.nextFollowUpDate)) / (1000 * 60 * 60 * 24));
+        if (diffDays > 0) delayText = `${diffDays} days late`;
+        else if (diffDays < 0) delayText = `${Math.abs(diffDays)} days early`;
+        else delayText = '0 days (On Time)';
+      }
+
+      return {
+        'Customer / Client': f.clientName,
+        'Contact Number': f.contactNumber || '',
+        'CRE / Doer': f.creName || 'CRE Executive',
+        'Planned Date (Plan)': planDateStr,
+        'Actual Call Date (Actual)': actDateStr,
+        'Delay / Performance': delayText,
+        'Call Status': f.callStatus || 'Connected',
+        'Completion Status': f.isCompleted ? 'Completed' : 'Pending',
+        'Customer Feedback': f.customerFeedback || '',
+        'Expected Order Value (₹)': f.orderExpectedAmount || 0,
+        'Sentiment': f.sentiment || 'Neutral',
+        'Log Timestamp': f.createdAt ? new Date(f.createdAt).toLocaleString() : ''
+      };
+    });
+
+    const ws = xlsx.utils.json_to_sheet(exportData);
+    const wb = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(wb, ws, 'FollowUp_MIS');
+
+    const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Disposition', 'attachment; filename="FollowUp_MIS_Plan_vs_Actual.xlsx"');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buf);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 9. Quick Update Client Follow-Up Details (Inline or via Table)
 app.patch('/api/clients/:id/followup', async (req, res) => {
   try {

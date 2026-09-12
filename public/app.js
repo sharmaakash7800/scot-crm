@@ -1908,14 +1908,33 @@ document.getElementById('followUpSearch')?.addEventListener('input', (e) => {
 async function markFollowUpComplete(id) {
   try {
     const res = await fetch(`/api/followups/${id}/complete`, { method: 'PATCH' });
+    const data = await res.json();
     if (res.ok) {
       showToast('Follow-up marked as completed!');
+      // Auto-save completion with Plan vs Actual to Google Sheet
+      if (data.followUp) {
+        pushToGoogleSheetWebhook({
+          type: 'Call Completed',
+          clientName: data.followUp.clientName,
+          contactNumber: data.followUp.contactNumber,
+          creName: data.followUp.creName,
+          plannedDate: data.followUp.nextFollowUpDate ? new Date(data.followUp.nextFollowUpDate).toISOString().split('T')[0] : '',
+          actualDate: new Date().toISOString().split('T')[0],
+          status: 'Done / Completed',
+          customerFeedback: data.followUp.customerFeedback || 'Follow-up marked completed'
+        });
+      }
       await store.refreshAll();
     }
   } catch (err) {
     showToast('Error marking complete: ' + err.message, 'error');
   }
 }
+
+// Attach Followups MIS Report Download Button
+document.getElementById('btnExportFollowupsMIS')?.addEventListener('click', () => {
+  window.open('/api/export/followups-mis', '_blank');
+});
 
 async function deleteFollowUp(id) {
   if (!confirm('Are you sure you want to delete this follow-up record?')) return;
@@ -2278,16 +2297,19 @@ document.getElementById('creForm')?.addEventListener('submit', async (e) => {
     if (data.success) {
       closeCREModal();
       showToast('CRE Call logged and saved successfully!');
-      // Auto-push follow-up to Google Sheets
+      // Auto-push follow-up to Google Sheets with Plan vs Actual
       pushToGoogleSheetWebhook({
         type: 'Follow-Up / Call',
         clientName: body.clientName,
         contactNumber: body.contactNumber,
         creName: body.creName,
+        plannedDate: body.nextFollowUpDate || '',
+        actualDate: body.callDate || new Date().toISOString().split('T')[0],
         callStatus: body.callStatus,
         status: body.callStatus,
         customerFeedback: body.customerFeedback,
-        remarks: body.customerFeedback
+        remarks: body.customerFeedback,
+        orderExpectedAmount: body.orderExpectedAmount || 0
       });
       await store.refreshAll();
     } else {
@@ -2342,6 +2364,16 @@ document.getElementById('quickFollowUpForm')?.addEventListener('submit', async (
     const data = await res.json();
     if (res.ok && data.success) {
       closeQuickFollowUpModal();
+      // Auto-push follow-up to Google Sheets with Plan vs Actual
+      pushToGoogleSheetWebhook({
+        type: 'Follow-Up Update',
+        clientName: document.getElementById('quickFollowUpClientName').value,
+        creName: body.followUpTakenBy || 'CRE Executive',
+        plannedDate: body.nextFollowUpDate || '',
+        actualDate: new Date().toISOString().split('T')[0],
+        status: body.followUpStatus || 'Pending',
+        remarks: body.lastFeedback || ''
+      });
       loadScotMonthly();
       loadTodayFollowUpAgenda();
       loadFollowUpCalendar();
@@ -2356,33 +2388,66 @@ document.getElementById('quickFollowUpForm')?.addEventListener('submit', async (
 });
 
 // ==================== GOOGLE SHEETS LIVE SYNC & 2-WAY AUTO-SAVE ==================== //
-// Apps Script template code
-const APPS_SCRIPT_SNIPPET = `function doPost(e) {
+// Apps Script template code for MIS Report (Plan vs Actual Tracking)
+const APPS_SCRIPT_SNIPPET = `function doGet(e) {
+  return ContentService.createTextOutput("SCOT CRM Webhook is active and running!")
+    .setMimeType(ContentService.MimeType.TEXT);
+}
+
+function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getActiveSheet();
     
-    // Auto-create headers if sheet is empty
+    // Auto-create MIS Plan vs Actual headers if sheet is empty
     if (sheet.getLastRow() === 0) {
-      sheet.appendRow(["Timestamp", "Type", "Client / Vendor Name", "Contact", "Address", "CRE / Doer", "Status", "Remarks / Feedback"]);
+      sheet.appendRow([
+        "Timestamp",
+        "Client / Party Name",
+        "Contact Number",
+        "Assigned CRE / Doer",
+        "Planned Date (Plan)",
+        "Actual Call Date (Actual)",
+        "Delay (Days)",
+        "Call Status / Outcome",
+        "Feedback / Remarks",
+        "Expected Order Amount (₹)"
+      ]);
+      // Bold header formatting
+      sheet.getRange(1, 1, 1, 10).setFontWeight("bold").setBackground("#e2e8f0");
     }
     
-    // Append the new activity / client row
+    // Calculate delay if planned and actual dates are present
+    var delayDays = "On Time";
+    if (data.plannedDate && data.actualDate) {
+      var dPlan = new Date(data.plannedDate);
+      var dAct = new Date(data.actualDate);
+      var diff = Math.floor((dAct - dPlan) / (1000 * 60 * 60 * 24));
+      if (diff > 0) delayDays = diff + " days late";
+      else if (diff < 0) delayDays = Math.abs(diff) + " days early";
+      else delayDays = "0 days (On Time)";
+    }
+    
+    // Append the new MIS Activity row
     sheet.appendRow([
       new Date().toLocaleString(),
-      data.clientType || data.type || "Client",
       data.clientName || "",
       data.contactNumber || "",
-      data.address || "",
-      data.creName || data.assignedExecutive || "",
-      data.status || data.callStatus || "Pending",
-      data.remarks || data.customerFeedback || ""
+      data.creName || data.assignedExecutive || "CRE Executive",
+      data.plannedDate || "-",
+      data.actualDate || new Date().toLocaleDateString(),
+      delayDays,
+      data.status || data.callStatus || "Completed",
+      data.remarks || data.customerFeedback || "",
+      data.orderExpectedAmount || 0
     ]);
     
-    return ContentService.createTextOutput(JSON.stringify({ status: "success" })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
+      .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ status: "error", error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 }`;
 
