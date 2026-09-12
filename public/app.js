@@ -255,6 +255,30 @@ async function loadDashboard() {
       }
     }
 
+    // 6. Render Dashboard Priority Table (Clients requiring urgent attention)
+    const pTbody = document.querySelector('#dashboardPriorityTable tbody');
+    if (pTbody) {
+      const allClients = store.getState().clients || [];
+      const urgentClients = allClients
+        .filter(c => c.status && (c.status.startsWith('At Risk') || c.status.startsWith('Slow') || c.status.startsWith('Inactive')))
+        .slice(0, 10);
+
+      if (urgentClients.length === 0) {
+        pTbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px;">No priority clients found.</td></tr>';
+      } else {
+        pTbody.innerHTML = urgentClients.map(c => `
+          <tr>
+            <td><strong>${c.clientName}</strong></td>
+            <td>${c.contactNumber || '—'}</td>
+            <td><span style="font-weight: 600; color: ${c.daysSinceLastOrder > 90 ? 'var(--accent-rose)' : 'inherit'};">${c.daysSinceLastOrder !== null && c.daysSinceLastOrder !== undefined ? c.daysSinceLastOrder + ' days' : '—'}</span></td>
+            <td>${c.lastOrderDate ? formatDate(c.lastOrderDate) : '—'}</td>
+            <td style="text-align: right;">${formatCurrency(c.lastOrderAmount || 0)}</td>
+            <td>${getStatusBadge(c.status)}</td>
+          </tr>
+        `).join('');
+      }
+    }
+
   } catch (err) {
     console.error('Error loading dashboard:', err);
   }
