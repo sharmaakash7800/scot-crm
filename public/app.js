@@ -2476,9 +2476,9 @@ document.getElementById('btnSyncGoogleSheet')?.addEventListener('click', async (
 
     if (data.success) {
       statusDiv.innerHTML = `<span style="color: #10b981;">✅ ${data.message}</span>`;
-      loadDashboard();
+      await store.refreshAll();
       loadTodayFollowUpAgenda();
-      loadClients();
+      loadClientMaster();
     } else {
       statusDiv.innerHTML = `<span style="color: #f43f5e;">❌ ${data.error}</span>`;
     }
