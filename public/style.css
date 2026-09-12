@@ -1134,6 +1134,20 @@ body.sidebar-open .sidebar-backdrop {
   font-variant-numeric: tabular-nums;
 }
 
+.btn-icon-only {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  line-height: 1;
+  transition: var(--transition-fast);
+}
+
+.btn-icon-only:hover {
+  transform: scale(1.12);
+}
+
 /* Editable cells */
 .editable-cell {
   position: relative;

@@ -118,13 +118,18 @@
         <div class="page-title">
           <h1 id="pageHeading">SCOT CRM</h1>
         </div>
-        <div style="display: flex; align-items: center; gap: 10px; margin-left: 16px; border-left: 1px solid var(--border-color); padding-left: 16px;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-left: 16px; border-left: 1px solid var(--border-color); padding-left: 16px; flex-wrap: wrap;">
           <div class="custom-select-wrap">
-            <select id="periodSelectDropdown" class="form-control select-financial-month" style="min-width: 160px; padding-top: 6px; padding-bottom: 6px;">
+            <select id="periodSelectDropdown" class="form-control select-financial-month" style="min-width: 140px; padding-top: 6px; padding-bottom: 6px;">
               <option value="today" selected>Today</option>
               <option value="week">This Week</option>
               <option value="month">This Month</option>
               <option value="all">All Time</option>
+            </select>
+          </div>
+          <div class="custom-select-wrap" title="Filter CRM view by specific Doer / CRE">
+            <select id="globalDoerFilterDropdown" class="form-control" style="min-width: 155px; padding-top: 6px; padding-bottom: 6px; border-color: var(--accent-primary);">
+              <option value="all">👤 All Doers / CRE</option>
             </select>
           </div>
         </div>
@@ -671,6 +676,18 @@
             <p style="color: var(--text-secondary); font-size: 0.85rem;">Stored persistently in MongoDB</p>
           </div>
           <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+            <!-- Client vs Vendor Filter Pills -->
+            <div class="filter-pill-group" style="display: inline-flex; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 3px; gap: 4px;">
+              <button type="button" class="btn btn-secondary btn-action-sm active" id="btnFilterTypeAll" onclick="setClientTypeFilter('all')" style="font-size: 0.76rem; padding: 4px 10px;">All</button>
+              <button type="button" class="btn btn-secondary btn-action-sm" id="btnFilterTypeClient" onclick="setClientTypeFilter('Client')" style="font-size: 0.76rem; padding: 4px 10px;">Clients</button>
+              <button type="button" class="btn btn-secondary btn-action-sm" id="btnFilterTypeVendor" onclick="setClientTypeFilter('Vendor')" style="font-size: 0.76rem; padding: 4px 10px;">Vendors</button>
+            </div>
+
+            <!-- Duplicate Data Filter Toggle Button -->
+            <button type="button" class="btn btn-secondary" id="btnFilterDuplicates" onclick="toggleDuplicatesFilter()" title="Show only duplicate client names or contact numbers" style="font-size: 0.78rem; padding: 6px 12px;">
+              <span>⚠️ Show Duplicates</span>
+            </button>
+
             <div class="search-input-wrap">
               <span class="search-icon">🔍</span>
               <input type="text" class="search-input" id="clientMasterSearch" placeholder="Search clients...">
@@ -683,7 +700,7 @@
               <span>📥 Import Excel</span>
             </button>
             <input type="file" id="clientExcelFileInput" accept=".xlsx, .xls" style="display: none;">
-            <button class="btn btn-primary" id="btnNewClient">+ Add Client</button>
+            <button class="btn btn-primary" id="btnNewClient">+ Add Client / Vendor</button>
           </div>
         </div>
 
@@ -694,12 +711,13 @@
                 <th style="width: 40px; text-align: center;">
                   <input type="checkbox" id="selectAllClientsCheckbox" style="cursor: pointer; width: 16px; height: 16px;" title="Select All Clients" onchange="toggleSelectAllClients(this)">
                 </th>
-                <th>Client</th>
+                <th>Party Name</th>
+                <th style="width: 90px; text-align: center;">Type</th>
                 <th>Contact</th>
                 <th>Next Follow-up</th>
                 <th>Status</th>
                 <th>Last Activity</th>
-                <th>Actions</th>
+                <th style="text-align: center; width: 110px;">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -893,9 +911,18 @@ git push -u origin main</pre>
       </div>
       <form id="clientForm">
         <input type="hidden" id="clientEditId">
-        <div class="form-group">
-          <label class="form-label">Client Name *</label>
-          <input type="text" class="form-control" id="clientName" required placeholder="e.g. Ankit Electricals">
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label">Name / Company *</label>
+            <input type="text" class="form-control" id="clientName" required placeholder="e.g. Ankit Electricals">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Party Type *</label>
+            <select class="form-control" id="clientPartyType">
+              <option value="Client" selected>Client (Buyer)</option>
+              <option value="Vendor">Vendor (Supplier)</option>
+            </select>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">Primary Contact Number</label>
@@ -1211,9 +1238,18 @@ git push -u origin main</pre>
           </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label" for="drawerClientName">Client Name *</label>
-          <input type="text" class="form-control" id="drawerClientName" required>
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label class="form-label" for="drawerClientName">Name / Company *</label>
+            <input type="text" class="form-control" id="drawerClientName" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="drawerClientPartyType">Party Type *</label>
+            <select class="form-control" id="drawerClientPartyType">
+              <option value="Client">Client</option>
+              <option value="Vendor">Vendor</option>
+            </select>
+          </div>
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">

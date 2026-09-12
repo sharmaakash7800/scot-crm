@@ -882,23 +882,82 @@ async function loadMonthlyLossMatrix() {
   }
 }
 
+// Client Master Filters State
+let clientMasterTypeFilter = 'all'; // 'all', 'Client', 'Vendor'
+let clientMasterShowDuplicatesOnly = false;
+
+function setClientTypeFilter(type) {
+  clientMasterTypeFilter = type;
+  document.querySelectorAll('.filter-pill-group button').forEach(b => b.classList.remove('active'));
+  if (type === 'all') document.getElementById('btnFilterTypeAll')?.classList.add('active');
+  if (type === 'Client') document.getElementById('btnFilterTypeClient')?.classList.add('active');
+  if (type === 'Vendor') document.getElementById('btnFilterTypeVendor')?.classList.add('active');
+  loadClientMaster();
+}
+
+function toggleDuplicatesFilter() {
+  clientMasterShowDuplicatesOnly = !clientMasterShowDuplicatesOnly;
+  const btn = document.getElementById('btnFilterDuplicates');
+  if (btn) {
+    if (clientMasterShowDuplicatesOnly) {
+      btn.classList.add('active');
+      btn.style.background = 'rgba(244, 63, 94, 0.2)';
+      btn.style.borderColor = 'var(--accent-rose)';
+      btn.style.color = 'var(--accent-rose)';
+      btn.innerHTML = '<span>⚠️ Showing Duplicates Only (Active)</span>';
+    } else {
+      btn.classList.remove('active');
+      btn.style.background = '';
+      btn.style.borderColor = '';
+      btn.style.color = '';
+      btn.innerHTML = '<span>⚠️ Show Duplicates</span>';
+    }
+  }
+  loadClientMaster();
+}
+
 // 4. Client Master View
 async function loadClientMaster() {
   try {
     const q = document.getElementById('clientMasterSearch')?.value || '';
     let clients = store.getState().clients || [];
 
+    // 1. Client vs Vendor Filter
+    if (clientMasterTypeFilter !== 'all') {
+      clients = clients.filter(c => (c.clientType || 'Client') === clientMasterTypeFilter);
+    }
+
+    // 2. Duplicates Filter
+    if (clientMasterShowDuplicatesOnly) {
+      const nameCounts = new Map();
+      const phoneCounts = new Map();
+      clients.forEach(c => {
+        const normName = (c.clientName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        if (normName) nameCounts.set(normName, (nameCounts.get(normName) || 0) + 1);
+        const normPhone = (c.contactNumber || '').replace(/\D/g, '');
+        if (normPhone && normPhone.length >= 7) phoneCounts.set(normPhone, (phoneCounts.get(normPhone) || 0) + 1);
+      });
+
+      clients = clients.filter(c => {
+        const normName = (c.clientName || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const normPhone = (c.contactNumber || '').replace(/\D/g, '');
+        return (nameCounts.get(normName) > 1) || (normPhone && phoneCounts.get(normPhone) > 1);
+      });
+    }
+
+    // 3. Search Filter
     if (q) {
       const qLower = q.toLowerCase().trim();
       clients = clients.filter(c => 
          c.clientName.toLowerCase().includes(qLower) || 
-         (c.contactNumber && c.contactNumber.includes(qLower))
+         (c.contactNumber && c.contactNumber.includes(qLower)) ||
+         (c.uniqueId && c.uniqueId.toLowerCase().includes(qLower))
       );
     }
 
     const tbody = document.querySelector('#clientMasterTable tbody');
     if (clients.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 30px;">No clients found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 35px;">No records found matching filters.</td></tr>';
       updateBulkDeleteToolbar();
       return;
     }
@@ -909,7 +968,7 @@ async function loadClientMaster() {
       selectAllBox.checked = clients.length > 0 && clients.every(c => selectedClientIds.has(c._id));
     }
 
-    // Simplified columns: Checkbox | Client | Contact | Next Follow-up | Status | Last Activity | Actions
+    // Simplified columns: Checkbox | Party Name | Type | Contact | Next Follow-up | Status | Last Activity | Actions (Icon Only)
     tbody.innerHTML = clients.map(c => {
       const isTaken = c.followUpStatus === 'Taken / Done';
       const statusBadge = isTaken
@@ -918,6 +977,10 @@ async function loadClientMaster() {
         
       const lastActivity = c.actualDate ? formatDate(c.actualDate) : (c.firstOrderDate ? formatDate(c.firstOrderDate) : 'No Activity');
       const isChecked = selectedClientIds.has(c._id) ? 'checked' : '';
+      const isVendor = (c.clientType || 'Client') === 'Vendor';
+      const typeBadge = isVendor 
+        ? '<span class="badge" style="background: rgba(139, 92, 246, 0.15); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.3);">Vendor</span>'
+        : '<span class="badge" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.3);">Client</span>';
 
       return `
         <tr class="${selectedClientIds.has(c._id) ? 'row-selected' : ''}">
@@ -925,18 +988,19 @@ async function loadClientMaster() {
             <input type="checkbox" class="client-row-checkbox" data-id="${c._id}" ${isChecked} onchange="onClientCheckboxChange('${c._id}', this.checked)" style="cursor: pointer; width: 16px; height: 16px;">
           </td>
           <td>
-             <strong style="cursor: pointer; color: var(--text-primary); font-size: 1.05rem;" onclick="openClientOverviewDrawer('${c._id}')">${c.clientName}</strong><br/>
-             <span style="font-size: 0.75rem; color: var(--text-muted);">${c.uniqueId || '-'}</span>
+             <strong style="cursor: pointer; color: var(--text-primary); font-size: 1.02rem;" onclick="openClientOverviewDrawer('${c._id}')">${c.clientName}</strong><br/>
+             <span style="font-size: 0.74rem; color: var(--text-muted);">${c.uniqueId || '-'}</span>
           </td>
+          <td style="text-align: center;">${typeBadge}</td>
           <td>${c.contactNumber || '-'}</td>
           <td><strong style="color: var(--accent-cyan);">${formatDate(c.nextFollowUpDate)}</strong></td>
           <td>${statusBadge}</td>
           <td>${lastActivity}</td>
-          <td>
-            <div style="display: flex; gap: 6px;">
-              <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="openClientOverviewDrawer('${c._id}')">👁️ View</button>
-              <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; color: var(--accent-primary);" onclick="editClient('${c._id}')">✏️ Edit</button>
-              <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; color: #DC2626;" onclick="deleteClient('${c._id}')">Delete</button>
+          <td style="text-align: center;">
+            <div style="display: inline-flex; gap: 6px; align-items: center; justify-content: center;">
+              <button class="btn btn-secondary btn-icon-only" style="padding: 6px 9px; font-size: 0.9rem;" title="View Details" onclick="openClientOverviewDrawer('${c._id}')">👁️</button>
+              <button class="btn btn-secondary btn-icon-only" style="padding: 6px 9px; font-size: 0.9rem; color: var(--accent-primary);" title="Edit Record" onclick="editClient('${c._id}')">✏️</button>
+              <button class="btn btn-secondary btn-icon-only" style="padding: 6px 9px; font-size: 0.9rem; color: #ef4444;" title="Delete Record" onclick="deleteClient('${c._id}')">🗑️</button>
             </div>
           </td>
         </tr>
@@ -1177,6 +1241,8 @@ function openClientModal(client = null) {
     document.getElementById('clientNextFollowUpDate').value = client.nextFollowUpDate ? client.nextFollowUpDate.split('T')[0] : '';
     document.getElementById('clientFollowUpTakenBy').value = client.followUpTakenBy || '';
     document.getElementById('clientLastFeedback').value = client.lastFeedback || '';
+    const typeEl = document.getElementById('clientPartyType');
+    if (typeEl) typeEl.value = client.clientType || 'Client';
 
     // Render contacts
     if (Array.isArray(client.contacts) && client.contacts.length > 0) {
@@ -1185,10 +1251,12 @@ function openClientModal(client = null) {
       addClientModalContactRow({ name: 'Primary Contact', designation: 'Contact Person', phone: client.contactNumber });
     }
   } else {
-    document.getElementById('clientModalTitle').innerText = 'Add New Client';
+    document.getElementById('clientModalTitle').innerText = 'Add New Client / Vendor';
     document.getElementById('clientEditId').value = '';
     document.getElementById('clientForm').reset();
     document.getElementById('clientFollowUpTakenBy').value = '';
+    const typeEl = document.getElementById('clientPartyType');
+    if (typeEl) typeEl.value = 'Client';
     addClientModalContactRow({ name: '', designation: '', phone: '' });
   }
   document.getElementById('clientModal').classList.add('active');
@@ -1213,13 +1281,13 @@ async function editClient(id) {
 }
 
 async function deleteClient(id) {
-  if (!confirm('Are you sure you want to delete this client?')) return;
+  if (!confirm('Are you sure you want to delete this record?')) return;
   try {
     await fetch(`/api/clients/${id}`, { method: 'DELETE' });
-    showToast('Client deleted successfully');
+    showToast('Record deleted successfully');
     await store.refreshAll();
   } catch (err) {
-    showToast('Failed to delete client', 'error');
+    showToast('Failed to delete record', 'error');
   }
 }
 
@@ -1252,11 +1320,13 @@ document.getElementById('clientForm')?.addEventListener('submit', async (e) => {
   });
 
   const primaryContact = document.getElementById('clientContact').value.trim() || (contacts[0]?.phone || '');
+  const partyType = document.getElementById('clientPartyType')?.value || 'Client';
 
   const body = {
     clientName: document.getElementById('clientName').value.trim(),
     contactNumber: primaryContact,
     contacts,
+    clientType: partyType,
     address: document.getElementById('clientAddress').value.trim(),
     usualOrderGap: document.getElementById('clientUsualGap').value,
     firstOrderDate: document.getElementById('clientFirstOrderDate').value,
@@ -2301,23 +2371,25 @@ async function loadExecutivesList() {
   }
 }
 
-// Populate all CRE / Executive dropdowns across modals
+// Populate all CRE / Executive dropdowns across modals & header
 function populateAllExecutiveDropdowns() {
-  const dropdownIds = ['clientFollowUpTakenBy', 'creExecutiveName', 'quickFollowUpTakenBy', 'drawerFollowUpBy'];
+  const dropdownIds = ['clientFollowUpTakenBy', 'creExecutiveName', 'quickFollowUpTakenBy', 'drawerFollowUpBy', 'globalDoerFilterDropdown'];
   dropdownIds.forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const currentVal = sel.value;
-    const placeholder = id === 'creExecutiveName' || id === 'clientFollowUpTakenBy'
-      ? '-- Select CRE / Doer --'
-      : (id === 'quickFollowUpTakenBy' ? '-- Select CRE / Doer --' : 'Unassigned');
+    const placeholder = id === 'globalDoerFilterDropdown'
+      ? '👤 All Doers / CRE'
+      : (id === 'creExecutiveName' || id === 'clientFollowUpTakenBy'
+        ? '-- Select CRE / Doer --'
+        : (id === 'quickFollowUpTakenBy' ? '-- Select CRE / Doer --' : 'Unassigned'));
 
-    sel.innerHTML = `<option value="">${placeholder}</option>`;
+    sel.innerHTML = `<option value="${id === 'globalDoerFilterDropdown' ? 'all' : ''}">${placeholder}</option>`;
     allExecutivesList.forEach(ex => {
       if (!ex.name) return;
       const opt = document.createElement('option');
       opt.value = ex.name;
-      opt.innerText = ex.name + (!ex.isActive ? ' (Inactive)' : '');
+      opt.innerText = (id === 'globalDoerFilterDropdown' ? '👤 ' : '') + ex.name + (!ex.isActive ? ' (Inactive)' : '');
       sel.appendChild(opt);
     });
     if (currentVal) {
@@ -2552,6 +2624,8 @@ async function openEditDrawer(clientId) {
   document.getElementById('drawerContactNumber').value = r.contactNumber || '';
   document.getElementById('drawerAddress').value = r.address || '';
   document.getElementById('drawerUsualGap').value = r.usualOrderGap || 0;
+  const drType = document.getElementById('drawerClientPartyType');
+  if (drType) drType.value = r.clientType || 'Client';
 
   // Render contacts in drawer
   const container = document.getElementById('drawerContactsContainer');
@@ -2627,6 +2701,7 @@ document.getElementById('editClientForm')?.addEventListener('submit', async (e) 
   });
 
   const contactNumber = document.getElementById('drawerContactNumber').value.trim() || (contacts[0]?.phone || '');
+  const clientType = document.getElementById('drawerClientPartyType')?.value || 'Client';
 
   const btn = e.target.querySelector('button[type="submit"]');
   const originalText = btn.innerText;
@@ -2642,6 +2717,7 @@ document.getElementById('editClientForm')?.addEventListener('submit', async (e) 
         clientName,
         contactNumber,
         contacts,
+        clientType,
         address,
         usualOrderGap
       })
@@ -2924,6 +3000,40 @@ window.addEventListener('DOMContentLoaded', async () => {
     periodDropdown.addEventListener('change', async (e) => {
       store.setState({ currentPeriod: e.target.value });
       await store.refreshAll();
+    });
+  }
+
+  // Global Doer / Person Filter logic (Shows only assigned tasks to chosen person)
+  const globalDoerDropdown = document.getElementById('globalDoerFilterDropdown');
+  if (globalDoerDropdown) {
+    globalDoerDropdown.addEventListener('change', (e) => {
+      const selectedDoer = e.target.value;
+      // Sync with Agenda Responsible Person
+      const agendaSelect = document.getElementById('agendaResponsiblePerson');
+      if (agendaSelect) {
+        agendaSelect.value = selectedDoer;
+        agendaFilterState.executive = selectedDoer;
+      }
+      // Sync with Monthly SCOT Executive filter
+      const scotExec = document.getElementById('scotFilterExecutive');
+      if (scotExec) {
+        scotExec.value = selectedDoer;
+        scotFilterState.executive = selectedDoer;
+      }
+
+      // Re-render active view
+      const activeTab = document.querySelector('.nav-link.active')?.getAttribute('data-tab');
+      if (activeTab === 'cre-followups') loadCREFollowUps();
+      else if (activeTab === 'scot-monthly') applyScotFiltersAndRender();
+      else if (activeTab === 'clients') {
+        const qInput = document.getElementById('clientMasterSearch');
+        if (selectedDoer !== 'all') {
+          if (qInput) qInput.value = selectedDoer;
+        } else {
+          if (qInput && allExecutivesList.some(ex => ex.name === qInput.value)) qInput.value = '';
+        }
+        loadClientMaster();
+      }
     });
   }
 

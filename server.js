@@ -405,8 +405,11 @@ app.get('/api/dashboard/followup-stats', async (req, res) => {
 // 3. Client Master API
 app.get('/api/clients', async (req, res) => {
   try {
-    const { search, limit = 2000 } = req.query;
+    const { search, limit = 2000, type } = req.query;
     let query = {};
+    if (type && type !== 'all') {
+      query.clientType = type;
+    }
     if (search) {
       query.$or = [
         { clientName: { $regex: search, $options: 'i' } },
@@ -440,6 +443,7 @@ app.post('/api/clients', async (req, res) => {
       clientName,
       contactNumber,
       contacts,
+      clientType,
       address,
       usualOrderGap,
       firstOrderDate,
@@ -478,26 +482,19 @@ app.post('/api/clients', async (req, res) => {
       uid = `Scot${String(count + 1).padStart(4, '0')}`;
     }
 
-    // Process contacts list
+    // Parse contacts if provided
     let parsedContacts = [];
     if (Array.isArray(contacts)) {
       parsedContacts = contacts.filter(c => c && (c.name || c.phone || c.email || c.designation));
-    } else if (contactNumber) {
-      parsedContacts.push({
-        name: 'Primary Contact',
-        designation: 'Contact Person',
-        phone: String(contactNumber).trim(),
-        email: '',
-        isPrimary: true
-      });
     }
 
     const client = new Client({
       uniqueId: uid,
       clientName: trimmedName,
       normalizedName: normalized,
-      contactNumber: (contactNumber || (parsedContacts[0]?.phone) || '').trim(),
+      contactNumber: (contactNumber || '').trim(),
       contacts: parsedContacts,
+      clientType: clientType === 'Vendor' ? 'Vendor' : 'Client',
       address: (address || '').trim(),
       usualOrderGap: Number(usualOrderGap) || 0,
       firstOrderDate: firstOrderDate ? new Date(firstOrderDate) : null,
@@ -521,6 +518,7 @@ app.put('/api/clients/:id', async (req, res) => {
       clientName,
       contactNumber,
       contacts,
+      clientType,
       address,
       usualOrderGap,
       firstOrderDate,
@@ -558,6 +556,7 @@ app.put('/api/clients/:id', async (req, res) => {
       existing.normalizedName = normalized;
     }
 
+    if (clientType !== undefined) existing.clientType = clientType === 'Vendor' ? 'Vendor' : 'Client';
     if (address !== undefined) existing.address = address.trim();
     if (usualOrderGap !== undefined) existing.usualOrderGap = Number(usualOrderGap) || 0;
     if (firstOrderDate !== undefined) existing.firstOrderDate = firstOrderDate ? new Date(firstOrderDate) : null;

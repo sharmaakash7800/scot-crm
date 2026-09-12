@@ -54,6 +54,12 @@ const clientSchema = new mongoose.Schema({
   },
   // Child table / list of multiple company employees & contact persons
   contacts: [contactPersonSchema],
+  clientType: {
+    type: String,
+    enum: ['Client', 'Vendor'],
+    default: 'Client',
+    index: true
+  },
   address: {
     type: String,
     trim: true,
