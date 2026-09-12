@@ -1506,7 +1506,7 @@ app.post('/api/sync-google-sheet', async (req, res) => {
         const status = statusIdx !== -1 && row[statusIdx] ? String(row[statusIdx]).trim() : 'Pending';
         const remarks = remarksIdx !== -1 && row[remarksIdx] ? String(row[remarksIdx]).trim() : '';
 
-        await Client.findOneAndUpdate(
+        const savedClient = await Client.findOneAndUpdate(
           { clientName: { $regex: `^${cName}$`, $options: 'i' } },
           {
             $setOnInsert: {
@@ -1517,20 +1517,25 @@ app.post('/api/sync-google-sheet', async (req, res) => {
             contactNumber: contact,
             address,
             usualOrderGap: gap,
-            assignedExecutive: cre || 'CRE Executive'
+            assignedExecutive: cre || 'CRE Executive',
+            followUpStatus: status || 'Pending',
+            lastFeedback: remarks || ''
           },
-          { upsert: true }
+          { upsert: true, new: true }
         );
         importedClients++;
 
-        // Also create a Follow-up record if this row includes CRE or follow-up details
+        // Also create a Follow-up record if this row includes remarks or CRE
         if (isFollowupSheet || cre || remarks) {
           await FollowUp.create({
+            clientId: savedClient._id,
             clientName: cName,
+            contactNumber: contact || '',
             creName: cre || 'CRE Executive',
-            followUpDate: new Date(),
-            status: status || 'Pending',
-            remarks: remarks || 'Imported from Google Sheet sync'
+            callDate: new Date(),
+            callStatus: status && status !== 'Pending' ? status : 'Connected',
+            customerFeedback: remarks || 'Imported from Google Sheet sync',
+            isCompleted: false
           });
           importedFollowups++;
         }
