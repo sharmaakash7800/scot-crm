@@ -1106,13 +1106,12 @@ body.sidebar-open .sidebar-backdrop {
   height: auto;
 }
 
-/* Clean subtle hover state without alternating noise */
-.data-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.03);
+.data-table tbody tr.row-selected {
+  background: rgba(99, 102, 241, 0.12) !important;
 }
 
-[data-theme="light"] .data-table tbody tr:hover {
-  background: rgba(0, 0, 0, 0.02);
+[data-theme="light"] .data-table tbody tr.row-selected {
+  background: rgba(79, 70, 229, 0.08) !important;
 }
 
 .data-table tbody td {

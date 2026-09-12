@@ -898,11 +898,18 @@ async function loadClientMaster() {
 
     const tbody = document.querySelector('#clientMasterTable tbody');
     if (clients.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No clients found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 30px;">No clients found.</td></tr>';
+      updateBulkDeleteToolbar();
       return;
     }
 
-    // Simplified columns: Client | Contact | Next Follow-up | Status | Last Activity | Actions
+    // Reset select all checkbox state
+    const selectAllBox = document.getElementById('selectAllClientsCheckbox');
+    if (selectAllBox) {
+      selectAllBox.checked = clients.length > 0 && clients.every(c => selectedClientIds.has(c._id));
+    }
+
+    // Simplified columns: Checkbox | Client | Contact | Next Follow-up | Status | Last Activity | Actions
     tbody.innerHTML = clients.map(c => {
       const isTaken = c.followUpStatus === 'Taken / Done';
       const statusBadge = isTaken
@@ -910,9 +917,13 @@ async function loadClientMaster() {
         : (c.nextFollowUpDate ? '<span class="badge badge-slow">⏳ Pending</span>' : '<span class="badge badge-none">Not Set</span>');
         
       const lastActivity = c.actualDate ? formatDate(c.actualDate) : (c.firstOrderDate ? formatDate(c.firstOrderDate) : 'No Activity');
+      const isChecked = selectedClientIds.has(c._id) ? 'checked' : '';
 
       return `
-        <tr>
+        <tr class="${selectedClientIds.has(c._id) ? 'row-selected' : ''}">
+          <td style="text-align: center;">
+            <input type="checkbox" class="client-row-checkbox" data-id="${c._id}" ${isChecked} onchange="onClientCheckboxChange('${c._id}', this.checked)" style="cursor: pointer; width: 16px; height: 16px;">
+          </td>
           <td>
              <strong style="cursor: pointer; color: var(--text-primary); font-size: 1.05rem;" onclick="openClientOverviewDrawer('${c._id}')">${c.clientName}</strong><br/>
              <span style="font-size: 0.75rem; color: var(--text-muted);">${c.uniqueId || '-'}</span>
@@ -931,8 +942,102 @@ async function loadClientMaster() {
         </tr>
       `;
     }).join('');
+
+    updateBulkDeleteToolbar();
   } catch (err) {
     console.error('Error loading clients:', err);
+  }
+}
+
+// Bulk Selection Management
+let selectedClientIds = new Set();
+
+function onClientCheckboxChange(id, isChecked) {
+  if (isChecked) {
+    selectedClientIds.add(id);
+  } else {
+    selectedClientIds.delete(id);
+  }
+  updateBulkDeleteToolbar();
+}
+
+function toggleSelectAllClients(masterCheckbox) {
+  const visibleCheckboxes = document.querySelectorAll('.client-row-checkbox');
+  visibleCheckboxes.forEach(cb => {
+    cb.checked = masterCheckbox.checked;
+    const id = cb.getAttribute('data-id');
+    if (masterCheckbox.checked) {
+      selectedClientIds.add(id);
+    } else {
+      selectedClientIds.delete(id);
+    }
+  });
+  updateBulkDeleteToolbar();
+}
+
+function updateBulkDeleteToolbar() {
+  const btnBulk = document.getElementById('btnBulkDeleteClients');
+  const countSpan = document.getElementById('bulkDeleteSelectedCount');
+  const count = selectedClientIds.size;
+
+  if (countSpan) countSpan.innerText = count;
+
+  if (btnBulk) {
+    if (count > 0) {
+      btnBulk.style.display = 'inline-flex';
+    } else {
+      btnBulk.style.display = 'none';
+    }
+  }
+
+  // Update row highlighting
+  document.querySelectorAll('.client-row-checkbox').forEach(cb => {
+    const row = cb.closest('tr');
+    if (row) {
+      if (cb.checked) row.classList.add('row-selected');
+      else row.classList.remove('row-selected');
+    }
+  });
+}
+
+async function executeBulkDeleteClients() {
+  const ids = Array.from(selectedClientIds);
+  if (ids.length === 0) return;
+
+  const confirmed = confirm(`Are you sure you want to permanently delete ${ids.length} selected client(s)? This action cannot be undone.`);
+  if (!confirmed) return;
+
+  try {
+    const btn = document.getElementById('btnBulkDeleteClients');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerText = 'Deleting...';
+    }
+
+    const res = await fetch('/api/clients/bulk-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientIds: ids })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      showToast(`Successfully deleted ${data.deletedCount} client(s)`);
+      selectedClientIds.clear();
+      updateBulkDeleteToolbar();
+      await store.refreshAll();
+    } else {
+      showToast(data.error || 'Failed to delete clients', 'error');
+    }
+  } catch (err) {
+    console.error('Bulk delete error:', err);
+    showToast('Network error while deleting clients', 'error');
+  } finally {
+    const btn = document.getElementById('btnBulkDeleteClients');
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `🗑️ Delete Selected (<span id="bulkDeleteSelectedCount">0</span>)`;
+    }
   }
 }
 

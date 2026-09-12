@@ -595,6 +595,21 @@ app.delete('/api/clients/:id', async (req, res) => {
   }
 });
 
+// Bulk Delete Clients API
+app.post('/api/clients/bulk-delete', async (req, res) => {
+  try {
+    const { clientIds } = req.body;
+    if (!clientIds || !Array.isArray(clientIds) || clientIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'No client IDs provided' });
+    }
+
+    const result = await Client.deleteMany({ _id: { $in: clientIds } });
+    res.json({ success: true, message: `Successfully deleted ${result.deletedCount} clients`, deletedCount: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 3. Transactions API
 app.get('/api/transactions', async (req, res) => {
   try {

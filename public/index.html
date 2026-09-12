@@ -670,11 +670,15 @@
             <h3>Client Master Database</h3>
             <p style="color: var(--text-secondary); font-size: 0.85rem;">Stored persistently in MongoDB</p>
           </div>
-          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
             <div class="search-input-wrap">
               <span class="search-icon">🔍</span>
               <input type="text" class="search-input" id="clientMasterSearch" placeholder="Search clients...">
             </div>
+            <!-- Bulk Delete Action Button (Visible when 1 or more selected) -->
+            <button class="btn btn-secondary" id="btnBulkDeleteClients" style="display: none; background: rgba(220, 38, 38, 0.15); color: #ef4444; border-color: rgba(220, 38, 38, 0.3);" onclick="executeBulkDeleteClients()">
+              🗑️ Delete Selected (<span id="bulkDeleteSelectedCount">0</span>)
+            </button>
             <button class="btn btn-secondary btn-excel-action" id="btnImportClientExcel" title="Upload Excel with new clients">
               <span>📥 Import Excel</span>
             </button>
@@ -687,6 +691,9 @@
           <table class="data-table" id="clientMasterTable">
             <thead>
               <tr>
+                <th style="width: 40px; text-align: center;">
+                  <input type="checkbox" id="selectAllClientsCheckbox" style="cursor: pointer; width: 16px; height: 16px;" title="Select All Clients" onchange="toggleSelectAllClients(this)">
+                </th>
                 <th>Client</th>
                 <th>Contact</th>
                 <th>Next Follow-up</th>
